@@ -504,24 +504,10 @@
     <div class="pipe-arrow">→</div>
     <div class="pipe-node highlight">.dic ✓</div>
   </div>
-  <div class="pipeline" style="margin-bottom: 8px;">
-    <div class="pipe-node">.ifo + .idx + .dict.dz</div>
-    <div class="pipe-arrow">→</div>
-    <div class="pipe-node highlight">stardict-2-tab</div>
-    <div class="pipe-arrow">→</div>
-    <div class="pipe-node">.tsv</div>
-    <div class="pipe-arrow">→</div>
-    <div class="pipe-node highlight">tab-2-xdxf</div>
-    <div class="pipe-arrow">→</div>
-    <div class="pipe-node">.xdxf</div>
-    <div class="pipe-arrow">→</div>
-    <div class="pipe-node highlight">converter.exe</div>
-    <div class="pipe-arrow">→</div>
-    <div class="pipe-node highlight">.dic ✓</div>
-  </div>
+
 
   <p class="pipeline-label" style="margin-top: 24px;">Kaikki (Wiktionary)</p>
-  <div class="pipeline">
+  <div class="pipeline" style="margin-bottom: 48px;">
     <div class="pipe-node">.jsonl / .jsonl.gz</div>
     <div class="pipe-arrow">→</div>
     <div class="pipe-node highlight">kaikki-2-tab</div>
@@ -536,21 +522,7 @@
     <div class="pipe-arrow">→</div>
     <div class="pipe-node highlight">.dic ✓</div>
   </div>
-  <div class="pipeline" style="margin-bottom: 48px;">
-    <div class="pipe-node">.jsonl / .jsonl.gz</div>
-    <div class="pipe-arrow">→</div>
-    <div class="pipe-node highlight">kaikki-2-tab</div>
-    <div class="pipe-arrow">→</div>
-    <div class="pipe-node">.tsv</div>
-    <div class="pipe-arrow">→</div>
-    <div class="pipe-node highlight">tab-2-xdxf</div>
-    <div class="pipe-arrow">→</div>
-    <div class="pipe-node">.xdxf</div>
-    <div class="pipe-arrow">→</div>
-    <div class="pipe-node highlight">converter.exe</div>
-    <div class="pipe-arrow">→</div>
-    <div class="pipe-node highlight">.dic ✓</div>
-  </div>
+
 
   <!-- ===================== REQUIREMENTS ===================== -->
   <div class="section-label">Requirements</div>
@@ -614,8 +586,46 @@
       <div class="step-line"></div>
       <div class="step-number">2</div>
       <div class="step-content">
+        <div class="step-title">Download language files</div>
+        <p class="step-desc">
+          <code>xdxf-2-pbdic</code> requires per-language collation, keyboard, and morphem files to sort
+          and index the dictionary correctly. These are maintained separately by
+          <a href="https://github.com/Markismus" target="_blank">Markismus</a> and are
+          <strong>not included in this repo</strong> — download them manually and place them in your working directory.
+        </p>
+        <pre><span class="comment"># Download the zip from GitHub</span>
+<span class="cmd">wget</span> <span class="arg">https://github.com/Markismus/LanguageFilesPocketbookConverter/archive/refs/heads/master.zip</span> <span class="flag">-O</span> <span class="arg">langfiles.zip</span>
+<span class="cmd">unzip</span> <span class="arg">langfiles.zip</span>
+
+<span class="comment"># Copy the folder for your target language into windows/</span>
+<span class="cmd">mkdir</span> <span class="flag">-p</span> <span class="arg">windows/</span>
+<span class="cmd">cp</span> <span class="flag">-r</span> <span class="arg">LanguageFilesPocketbookConverter-master/pt</span> <span class="arg">windows/pt</span></pre>
+        <div class="note">
+          <strong>Files needed per language:</strong> <code>collates.txt</code>, <code>keyboard.txt</code>, <code>morphems.txt</code> — all three must be present in the language folder.
+          The folder name must match the language code passed to <code>--lang</code> (e.g. <code>windows/pt</code> for <code>-l pt</code>).
+        </div>
+        <div class="note" style="margin-top:8px;">
+          <strong>License note:</strong> the LanguageFilesPocketbookConverter repository carries no explicit license.
+          It is publicly available on GitHub but all rights are reserved by the author.
+          Use it for personal dictionary conversion; do not redistribute the files in your own repo or package.
+        </div>
+        <a class="download-box" href="https://github.com/Markismus/LanguageFilesPocketbookConverter/archive/refs/heads/master.zip" target="_blank">
+          <span class="dl-icon">↓</span>
+          <div class="dl-text">
+            LanguageFilesPocketbookConverter — all languages (zip)
+            <span class="dl-url">github.com/Markismus/LanguageFilesPocketbookConverter</span>
+          </div>
+        </a>
+      </div>
+    </div>
+
+    <!-- STEP 3 -->
+    <div class="step">
+      <div class="step-line"></div>
+      <div class="step-number">3</div>
+      <div class="step-content">
         <div class="step-title">Set up folder structure</div>
-        <p class="step-desc">Place the conversion tools in <code>linux/</code>, source data in <code>data/</code>, and language files in <code>windows/</code>. Generated <code>.tsv</code>, <code>.xdxf</code>, and <code>.dic</code> files land in <code>data/out/</code>.</p>
+        <p class="step-desc">Place the conversion tools in <code>linux/</code>, source data in <code>data/</code>, and the language files you downloaded in <code>windows/</code>. Generated <code>.tsv</code>, <code>.xdxf</code>, and <code>.dic</code> files land in <code>data/out/</code>.</p>
         <pre><span class="comment"># Expected folder structure</span>
 linux/
   stardict-2-tab        <span class="comment"># StarDict binary → TSV</span>
@@ -633,23 +643,22 @@ data/
     pt-extract.jsonl    <span class="comment"># or .jsonl.gz</span>
   out/                  <span class="comment"># all generated files</span>
     *.tsv  *.xdxf  *.dic
-windows/
-  converter.exe         <span class="comment"># optional Windows alternative</span>
-  pt/                   <span class="comment"># from LanguageFilesPocketbookConverter</span>
+windows/                <span class="comment"># NOT in repo — download separately (see step 2)</span>
+  pt/
     collates.txt  keyboard.txt  morphems.txt
-kiakki2xdxf-pten-pt.config
-kiakki2xdxf-pt-pt.config
-stardict2xdxf-pt-pt.config</pre>
+confs/kiakki2xdxf-pten-pt.config
+confs/kiakki2xdxf-pt-pt.config
+confs/stardict2xdxf-pt-pt.config</pre>
         <div class="note">
-          <strong>Language files:</strong> from <a href="https://github.com/Markismus/LanguageFilesPocketbookConverter" target="_blank">LanguageFilesPocketbookConverter</a> by <a href="https://github.com/Markismus" target="_blank">Markismus</a> — find the folder matching your target language code and place it inside <code>windows/</code>.
+          <strong>Language files</strong> go in <code>windows/&lt;lang&gt;/</code> — this folder is <em>not</em> distributed with the toolchain. See step 2 for how to obtain them.
         </div>
       </div>
     </div>
 
-    <!-- STEP 3 -->
+    <!-- STEP 4 -->
     <div class="step">
       <div class="step-line"></div>
-      <div class="step-number">3</div>
+      <div class="step-number">4</div>
       <div class="step-content">
         <div class="step-title">Convert to TSV and XDXF</div>
         <p class="step-desc">
@@ -707,7 +716,7 @@ stardict2xdxf-pt-pt.config</pre>
           <p class="step-desc">Each conversion has its own config file. All tools read it via <code>-c</code> and use their own namespace — CLI arguments always override config values.</p>
           <p class="step-desc">Property keys are prefixed with the tool name, dashes removed. Setting <code>out=-</code> or <code>in=-</code> enables piping directly from the config.</p>
 
-          <pre><span class="comment"># kiakki2xdxf-pten-pt.config — Kaikki PT+EN, piped to file</span>
+          <pre><span class="comment"># confs/kiakki2xdxf-pten-pt.config — Kaikki PT+EN, piped to file</span>
 
 kaikki2tab.in=data/kaikki/pt-extract.jsonl.gz
 kaikki2tab.out=-
@@ -719,7 +728,7 @@ tab2xdxf.out=data/out/kaikki-pten-pt.xdxf
 tab2xdxf.lang=pt,en
 tab2xdxf.name=Wiktionary.org PT+EN-&gt;PT (Kaikki)</pre>
 
-          <pre><span class="comment"># stardict2xdxf-pt-pt.config — StarDict, piped to file</span>
+          <pre><span class="comment"># confs/stardict2xdxf-pt-pt.config — StarDict, piped to file</span>
 
 stardict2tab.in=data/stardict/dict-pt-pt/dict-data.ifo
 stardict2tab.out=-
@@ -730,15 +739,15 @@ tab2xdxf.lang=pt
 tab2xdxf.name=Wiktionário PT-&gt;PT (ReaderDict)</pre>
 
           <pre><span class="comment"># Run with the chain scripts</span>
-<span class="cmd">linux/chain-kaikki-2-xdxf</span>   <span class="arg">kiakki2xdxf-pten-pt.config</span>
-<span class="cmd">linux/chain-stardict-2-xdxf</span> <span class="arg">stardict2xdxf-pt-pt.config</span>
+<span class="cmd">linux/chain-kaikki-2-xdxf</span>   <span class="arg">confs/kiakki2xdxf-pten-pt.config</span>
+<span class="cmd">linux/chain-stardict-2-xdxf</span> <span class="arg">confs/stardict2xdxf-pt-pt.config</span>
 
 <span class="comment"># Or run tools individually</span>
-<span class="cmd">linux/kaikki-2-tab</span>  <span class="flag">-c</span> <span class="arg">kiakki2xdxf-pten-pt.config</span>
-<span class="cmd">linux/tab-2-xdxf</span>   <span class="flag">-c</span> <span class="arg">kiakki2xdxf-pten-pt.config</span>
+<span class="cmd">linux/kaikki-2-tab</span>  <span class="flag">-c</span> <span class="arg">confs/kiakki2xdxf-pten-pt.config</span>
+<span class="cmd">linux/tab-2-xdxf</span>   <span class="flag">-c</span> <span class="arg">confs/kiakki2xdxf-pten-pt.config</span>
 
 <span class="comment"># CLI override — different language</span>
-<span class="cmd">linux/kaikki-2-tab</span> <span class="flag">-c</span> <span class="arg">kiakki2xdxf-pt-pt.config</span> <span class="flag">-l</span> <span class="arg">pt,en</span> <span class="flag">-o</span> <span class="arg">-</span> <span class="flag">|</span> <span class="cmd">linux/tab-2-xdxf</span> <span class="flag">-i</span> <span class="arg">-</span> <span class="flag">-c</span> <span class="arg">kiakki2xdxf-pt-pt.config</span></pre>
+<span class="cmd">linux/kaikki-2-tab</span> <span class="flag">-c</span> <span class="arg">confs/kiakki2xdxf-pt-pt.config</span> <span class="flag">-l</span> <span class="arg">pt,en</span> <span class="flag">-o</span> <span class="arg">-</span> <span class="flag">|</span> <span class="cmd">linux/tab-2-xdxf</span> <span class="flag">-i</span> <span class="arg">-</span> <span class="flag">-c</span> <span class="arg">confs/kiakki2xdxf-pt-pt.config</span></pre>
 
           <div class="note">
             <strong>Namespaces:</strong> <code>stardict-2-tab</code> → <code>stardict2tab.*</code>, <code>kaikki-2-tab</code> → <code>kaikki2tab.*</code>, <code>tab-2-xdxf</code> → <code>tab2xdxf.*</code>, <code>xdxf-2-pbdic</code> → <code>xdxf2pcdic.*</code>, <code>check-pbdic</code> → <code>checkpbdic.*</code>.<br>
@@ -749,25 +758,22 @@ tab2xdxf.name=Wiktionário PT-&gt;PT (ReaderDict)</pre>
       </div>
     </div>
 
-    <!-- STEP 4 -->
+    <!-- STEP 5 -->
     <div class="step">
       <div class="step-line"></div>
-      <div class="step-number">4</div>
+      <div class="step-number">5</div>
       <div class="step-content">
         <div class="step-title">Convert XDXF to .dic</div>
         <p class="step-desc">
-          Two options: <code>xdxf-2-pbdic</code> is a pure-Java tool included in this toolchain — no Wine required. <code>converter.exe</code> is the original Windows binary, run via Wine on Linux/macOS.
+          <code>xdxf-2-pbdic</code> is a pure-Java tool included in this toolchain — no Wine or closed-source dependencies required.
         </p>
-        <pre><span class="comment"># xdxf-2-pbdic — pure Java, no Wine needed</span>
+        <pre><span class="comment"># StarDict pipeline</span>
 <span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/dict-pt-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/dict-pt-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-D</span> <span class="arg">windows/pt</span> <span class="flag">-j</span> <span class="arg">false</span>
 <span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/kaikki-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-D</span> <span class="arg">windows/pt</span> <span class="flag">-j</span> <span class="arg">true</span>
 
-<span class="comment"># converter.exe — via Wine</span>
-<span class="cmd">cd</span> <span class="arg">windows/</span> <span class="flag">&amp;&amp;</span> <span class="cmd">wine</span> <span class="arg">./converter.exe ../data/out/kaikki-pt.xdxf pt</span>
-
 <span class="comment"># Full chain piped into xdxf-2-pbdic (shared config)</span>
-<span class="cmd">linux/chain-kaikki-2-xdxf</span> <span class="arg">kiakki2xdxf-pt-pt.config</span>
-<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-c</span> <span class="arg">kiakki2xdxf-pt-pt.config</span></pre>
+<span class="cmd">linux/chain-kaikki-2-xdxf</span> <span class="arg">confs/kiakki2xdxf-pt-pt.config</span>
+<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-c</span> <span class="arg">confs/kiakki2xdxf-pt-pt.config</span></pre>
         <div class="note">
           <strong>Language files:</strong> the <code>-D windows/pt</code> flag points to a folder containing <code>collates.txt</code>, <code>keyboard.txt</code>, and <code>morphems.txt</code> for your target language. Download from <a href="https://github.com/Markismus/LanguageFilesPocketbookConverter" target="_blank">LanguageFilesPocketbookConverter</a> by <a href="https://github.com/Markismus" target="_blank">Markismus</a>.<br>
           <strong>--join (required):</strong> controls how headwords that match case-insensitively are handled.
@@ -781,10 +787,10 @@ tab2xdxf.name=Wiktionário PT-&gt;PT (ReaderDict)</pre>
       </div>
     </div>
 
-    <!-- STEP 4b -->
+    <!-- STEP 5b -->
     <div class="step">
       <div class="step-line"></div>
-      <div class="step-number">4b</div>
+      <div class="step-number">5b</div>
       <div class="step-content">
         <div class="step-title">Validate (optional)</div>
         <p class="step-desc">
@@ -797,9 +803,9 @@ tab2xdxf.name=Wiktionário PT-&gt;PT (ReaderDict)</pre>
       </div>
     </div>
 
-    <!-- STEP 5 -->
+    <!-- STEP 6 -->
     <div class="step">
-      <div class="step-number">5</div>
+      <div class="step-number">6</div>
       <div class="step-content">
         <div class="step-title">Copy to PocketBook</div>
         <p class="step-desc">
@@ -822,6 +828,9 @@ tab2xdxf.name=Wiktionário PT-&gt;PT (ReaderDict)</pre>
   <div class="section-label">Legacy</div>
   <div class="deprecated">
     <strong>dict-2-xdxf — deprecated.</strong> Earlier versions of this guide used a single <code>dict-2-xdxf</code> tool that handled both StarDict and tabfile input via a <code>--format</code> flag. It has been superseded by the modular toolchain above (<code>stardict-2-tab</code>, <code>kaikki-2-tab</code>, <code>tab-2-xdxf</code>), which separates reading and writing concerns and converges on a common TSV intermediate format. <code>dict-2-xdxf</code> remains functional for single-step StarDict or tabfile conversion, but will not receive further updates.
+  </div>
+  <div class="deprecated">
+    <strong>converter.exe — deprecated.</strong> Earlier versions of this guide described <code>converter.exe</code> (a patched Windows binary run via Wine) as an alternative final step for producing <code>.dic</code> files from XDXF. It has been superseded by <code>xdxf-2-pbdic</code>, a pure-Java tool included in this toolchain that requires no Wine, no Windows, and no closed-source dependencies. <code>xdxf-2-pbdic</code> produces output verified to be compatible with PocketBook firmware and is the only supported conversion path going forward.
   </div>
 
   <footer>
