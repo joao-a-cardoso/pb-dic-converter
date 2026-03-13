@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PocketBook Dictionary Guide</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #1a1208;
+    --paper: #f5f0e8;
+    --aged: #e8e0cc;
+    --accent: #8b2500;
+    --accent-light: #c94a1a;
+    --muted: #6b5e4a;
+    --code-bg: #2a1f0e;
+    --code-fg: #f0c070;
+    --step-line: #c4b49a;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-weight: 300;
+    line-height: 1.7;
+    min-height: 100vh;
+    background-image:
+      radial-gradient(ellipse at 10% 0%, #e8d9b8 0%, transparent 50%),
+      radial-gradient(ellipse at 90% 100%, #ddd0b0 0%, transparent 50%);
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 1000;
+    opacity: 0.4;
+  }
+
+  .page {
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 60px 40px 100px;
+  }
+
+  header {
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 40px;
+    margin-bottom: 60px;
+  }
+
+  .eyebrow {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 16px;
+  }
+
+  h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(2.2rem, 5vw, 3.4rem);
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+  }
+
+  h1 em { font-style: italic; color: var(--accent); }
+
+  .subtitle {
+    margin-top: 16px;
+    font-size: 1rem;
+    color: var(--muted);
+    max-width: 560px;
+  }
+
+  .header-meta {
+    display: flex;
+    gap: 24px;
+    margin-top: 28px;
+    flex-wrap: wrap;
+  }
+
+  .badge {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    background: var(--ink);
+    color: var(--paper);
+    padding: 4px 10px;
+    border-radius: 2px;
+  }
+
+  .badge.outline {
+    background: transparent;
+    border: 1px solid var(--step-line);
+    color: var(--muted);
+  }
+
+  .section-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 32px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--step-line);
+  }
+
+  /* Formats grid */
+  .formats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 60px;
+  }
+
+  .format-card {
+    background: var(--aged);
+    border: 1px solid var(--step-line);
+    border-left: 3px solid var(--ink);
+    padding: 18px 20px;
+  }
+
+  .format-card.source { border-left-color: var(--accent); }
+  .format-card.intermediate { border-left-color: #7a6a50; }
+
+  .format-name {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--ink);
+    margin-bottom: 6px;
+  }
+
+  .format-ext {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.68rem;
+    color: var(--accent);
+    background: rgba(139,37,0,0.08);
+    padding: 1px 5px;
+    border-radius: 2px;
+    margin-left: 6px;
+  }
+
+  .format-desc {
+    font-size: 0.82rem;
+    color: var(--muted);
+    line-height: 1.55;
+    margin-top: 8px;
+  }
+
+  .format-desc a { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--accent-light); }
+
+  .format-role {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.62rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 10px;
+    opacity: 0.7;
+  }
+
+  /* Pipeline */
+  .pipeline-label {
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-bottom: 12px;
+    font-family: 'IBM Plex Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+
+  .pipeline {
+    display: flex;
+    align-items: center;
+    margin: 0 0 24px;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .pipe-node {
+    background: var(--aged);
+    border: 1px solid var(--step-line);
+    padding: 8px 14px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72rem;
+    border-radius: 2px;
+  }
+
+  .pipe-node.highlight {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+
+  .pipe-arrow {
+    padding: 0 4px;
+    color: var(--step-line);
+    font-size: 1rem;
+  }
+
+  /* Requirements */
+  .requirements {
+    background: var(--aged);
+    border-left: 3px solid var(--ink);
+    padding: 24px 28px;
+    margin-bottom: 60px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 32px;
+  }
+
+  .req-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.9rem;
+  }
+
+  .req-item .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex-shrink: 0;
+  }
+
+  .req-item a { color: var(--accent); text-decoration: none; border-bottom: 1px solid transparent; transition: border-color 0.2s; }
+  .req-item a:hover { border-color: var(--accent); }
+
+  /* Tabs */
+  .tab-bar {
+    display: flex;
+    border-bottom: 2px solid var(--step-line);
+  }
+
+  .tab-btn {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.75rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 10px 22px;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    cursor: pointer;
+    color: var(--muted);
+    transition: color 0.2s, border-color 0.2s;
+  }
+
+  .tab-btn.active {
+    color: var(--ink);
+    border-bottom-color: var(--accent);
+    font-weight: 500;
+  }
+
+  .tab-panel { display: none; padding-top: 28px; }
+  .tab-panel.active { display: block; }
+
+  /* Steps */
+  .step {
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    gap: 0 28px;
+    margin-bottom: 0;
+    position: relative;
+  }
+
+  .step:not(:last-child) .step-line {
+    position: absolute;
+    left: 27px; top: 56px; bottom: 0;
+    width: 1px;
+    background: var(--step-line);
+  }
+
+  .step-number {
+    width: 56px; height: 56px;
+    border: 2px solid var(--ink);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Playfair Display', serif;
+    font-size: 1.3rem;
+    background: var(--paper);
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+  }
+
+  .step-content { padding-bottom: 48px; }
+
+  .step-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin-bottom: 10px;
+    padding-top: 14px;
+  }
+
+  .step-desc {
+    font-size: 0.9rem;
+    color: var(--muted);
+    margin-bottom: 14px;
+    line-height: 1.65;
+  }
+
+  .step-desc a { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--accent-light); }
+  .step-desc a:hover { border-bottom-style: solid; }
+
+  pre {
+    background: var(--code-bg);
+    color: var(--code-fg);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.78rem;
+    line-height: 1.6;
+    padding: 16px 20px;
+    border-radius: 3px;
+    overflow-x: auto;
+    margin-top: 12px;
+    margin-bottom: 12px;
+  }
+
+  pre .comment { color: #7a6a50; }
+  pre .cmd { color: #f0c070; }
+  pre .arg { color: #a8d080; }
+  pre .flag { color: #80b8d0; }
+
+  code {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.82em;
+    background: var(--aged);
+    padding: 1px 5px;
+    border-radius: 2px;
+    color: var(--accent);
+  }
+
+  .note {
+    border: 1px solid var(--step-line);
+    border-left: 3px solid var(--accent);
+    padding: 14px 18px;
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-top: 14px;
+    background: rgba(255,255,255,0.3);
+    line-height: 1.6;
+  }
+
+  .note strong { color: var(--ink); font-weight: 500; }
+  .note a { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--accent-light); }
+
+  .deprecated {
+    border: 1px solid var(--step-line);
+    border-left: 3px solid #a08060;
+    padding: 18px 20px;
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-bottom: 60px;
+    background: rgba(160,128,96,0.06);
+    line-height: 1.65;
+  }
+
+  .deprecated strong { color: #7a5a30; font-weight: 500; }
+
+  .download-box {
+    background: var(--ink);
+    color: var(--paper);
+    padding: 20px 24px;
+    margin-top: 14px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    text-decoration: none;
+    transition: background 0.2s;
+    border-radius: 2px;
+  }
+
+  .download-box:hover { background: var(--accent); }
+  .download-box .dl-icon { font-size: 1.4rem; flex-shrink: 0; }
+  .download-box .dl-text { font-size: 0.85rem; line-height: 1.4; }
+  .download-box .dl-url { font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; opacity: 0.6; display: block; margin-top: 2px; }
+
+  footer {
+    border-top: 1px solid var(--step-line);
+    padding-top: 32px;
+    font-size: 0.8rem;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  footer .mono { font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; }
+
+  @media (max-width: 600px) {
+    .page { padding: 40px 20px 60px; }
+    .requirements { grid-template-columns: 1fr; }
+    .formats-grid { grid-template-columns: 1fr; }
+    .step { grid-template-columns: 44px 1fr; gap: 0 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <div class="eyebrow">Technical Guide · PocketBook</div>
+    <h1>Custom Dictionary<br>for <em>PocketBook</em></h1>
+    <p class="subtitle">Convert StarDict or Kaikki (Wiktionary) dictionaries to PocketBook's native format using a modular Java toolchain.</p>
+    <div class="header-meta">
+      <span class="badge">StarDict / Kaikki → TSV → XDXF → .dic</span>
+      <span class="badge outline">Linux · macOS · Windows</span>
+      <span class="badge outline">Java 17+</span>
+    </div>
+  </header>
+
+  <!-- ===================== FORMATS & DATA SOURCES ===================== -->
+  <div class="section-label">Formats &amp; Data Sources</div>
+
+  <p style="font-size:0.9rem; color:var(--muted); margin-bottom:24px; line-height:1.7;">
+    The pipeline passes data through several formats, each with a distinct role. Understanding them helps troubleshoot issues and adapt the toolchain to new sources.
+  </p>
+
+  <div class="formats-grid">
+
+    <div class="format-card source">
+      <div class="format-role">Source · StarDict</div>
+      <div class="format-name">StarDict<span class="format-ext">.ifo .idx .dict.dz</span></div>
+      <div class="format-desc">
+        A widely supported open dictionary format used by GoldenDict, Aard2, and others. A dictionary consists of three files: <code>.ifo</code> (metadata), <code>.idx</code> (binary word index with byte offsets), and <code>.dict.dz</code> (gzip-compressed definitions). Definitions are typically HTML. Source: <a href="https://www.reader-dict.com" target="_blank">reader-dict.com</a>.
+      </div>
+    </div>
+
+    <div class="format-card source">
+      <div class="format-role">Source · Kaikki / Wiktionary</div>
+      <div class="format-name">Kaikki JSONL<span class="format-ext">.jsonl .jsonl.gz</span></div>
+      <div class="format-desc">
+        Community-maintained Wiktionary data extracted and published by <a href="https://kaikki.org" target="_blank">kaikki.org</a>, updated weekly. Each line is a self-contained JSON object for one headword containing senses, IPA pronunciation, etymology, gender, plural forms, domain labels, usage examples, and compound expressions. Richer and more current than most packaged dictionaries.
+      </div>
+    </div>
+
+    <div class="format-card intermediate">
+      <div class="format-role">Intermediate</div>
+      <div class="format-name">Tabfile / TSV<span class="format-ext">.tsv</span></div>
+      <div class="format-desc">
+        Plain-text tab-separated values: one entry per line, <code>word&lt;TAB&gt;definition</code>. The common interchange format between all source converters and the XDXF writer. Useful for inspection, diffing, and debugging — keep it on disk as a build artefact. Use <code>out=-</code> / <code>in=-</code> to pipe directly between tools without writing to disk. Definitions may contain HTML.
+      </div>
+    </div>
+
+    <div class="format-card intermediate">
+      <div class="format-role">Intermediate</div>
+      <div class="format-name">XDXF<span class="format-ext">.xdxf</span></div>
+      <div class="format-desc">
+        XML-based dictionary format consumed by <code>xdxf-2-pbdic</code>. Each entry is an <code>&lt;ar&gt;</code> element with a <code>&lt;k&gt;</code> headword and an HTML definition body. Strict XML — tag attributes are stripped, unknown entities are escaped. Output is validated with Java's SAX parser before the next step.
+      </div>
+    </div>
+
+    <div class="format-card" style="grid-column: 1 / -1; border-left-color: var(--ink);">
+      <div class="format-role">Output · PocketBook native</div>
+      <div class="format-name">PocketBook Dictionary<span class="format-ext">.dic</span></div>
+      <div class="format-desc">
+        Proprietary binary format consumed by PocketBook firmware. The format has been reverse-engineered and is produced natively by <code>xdxf-2-pbdic</code>, a pure-Java tool included in this toolchain. No Wine or closed-source tools required. Conversion requires per-language collation, keyboard, and morphem files from <a href="https://github.com/Markismus/LanguageFilesPocketbookConverter" target="_blank">LanguageFilesPocketbookConverter</a> by <a href="https://github.com/Markismus" target="_blank">Markismus</a>.
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ===================== PIPELINES ===================== -->
+  <div class="section-label">Pipelines</div>
+
+  <p class="pipeline-label">StarDict</p>
+  <div class="pipeline">
+    <div class="pipe-node">.ifo + .idx + .dict.dz</div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-node highlight">stardict-2-tab</div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-node">.tsv</div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-node highlight">tab-2-xdxf</div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-node">.xdxf</div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-node highlight">xdxf-2-pbdic</div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-node highlight">.dic ✓</div>
+  </div>
+  <div class="pipeline" style="margin-bottom: 8px;">
+    <div class="pipe-node">.ifo + .idx + .dict.dz</div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-node highlight">stardict-2-tab</div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-node">.tsv</div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-node highlight">tab-2-xdxf</div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-node">.xdxf</div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-node highlight">converter.exe</div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-node highlight">.dic ✓</div>
+  </div>
+
+  <p class="pipeline-label" style="margin-top: 24px;">Kaikki (Wiktionary)</p>
+  <div class="pipeline">
+    <div class="pipe-node">.jsonl / .jsonl.gz</div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-node highlight">kaikki-2-tab</div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-node">.tsv</div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-node highlight">tab-2-xdxf</div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-node">.xdxf</div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-node highlight">xdxf-2-pbdic</div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-node highlight">.dic ✓</div>
+  </div>
+  <div class="pipeline" style="margin-bottom: 48px;">
+    <div class="pipe-node">.jsonl / .jsonl.gz</div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-node highlight">kaikki-2-tab</div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-node">.tsv</div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-node highlight">tab-2-xdxf</div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-node">.xdxf</div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-node highlight">converter.exe</div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-node highlight">.dic ✓</div>
+  </div>
+
+  <!-- ===================== REQUIREMENTS ===================== -->
+  <div class="section-label">Requirements</div>
+  <div class="requirements">
+    <div class="req-item"><span class="dot"></span>Java 17+ JDK</div>
+    <div class="req-item"><span class="dot"></span><a href="https://www.reader-dict.com/pt/download/pt" target="_blank">StarDict dictionary (reader-dict.com)</a> — or —</div>
+    <div class="req-item"><span class="dot"></span><a href="https://kaikki.org/dictionary/downloads/pt/pt-extract.jsonl" target="_blank">Kaikki JSONL (kaikki.org)</a></div>
+    <div class="req-item"><span class="dot"></span><a href="https://github.com/Markismus/LanguageFilesPocketbookConverter" target="_blank">LanguageFilesPocketbookConverter</a> by <a href="https://github.com/Markismus" target="_blank">Markismus</a> — collation, keyboard &amp; morphem files</div>
+    <div class="req-item"><span class="dot"></span>stardict-2-tab · kaikki-2-tab · tab-2-xdxf · xdxf-2-pbdic · check-pbdic</div>
+  </div>
+
+  <div class="section-label">Steps</div>
+
+  <div class="steps">
+
+    <!-- STEP 1 -->
+    <div class="step">
+      <div class="step-line"></div>
+      <div class="step-number">1</div>
+      <div class="step-content">
+        <div class="step-title">Download the dictionary source</div>
+        <p class="step-desc">
+          Choose your source. <strong>StarDict</strong> gives a ready-made packaged dictionary from reader-dict.com. <strong>Kaikki</strong> gives richer, community-maintained Wiktionary data updated weekly — pronunciation, etymology, domain labels, examples, and compound expressions included.
+        </p>
+
+        <div class="tab-bar">
+          <button class="tab-btn active" onclick="switchTab(event, 'src-stardict')">StarDict</button>
+          <button class="tab-btn" onclick="switchTab(event, 'src-kaikki')">Kaikki (Wiktionary)</button>
+        </div>
+
+        <div id="tab-src-stardict" class="tab-panel active">
+          <p class="step-desc">Go to <a href="https://www.reader-dict.com/pt/download/pt" target="_blank">reader-dict.com</a> and download the StarDict package (<code>.zip</code>). Extract it — you will get <code>.ifo</code>, <code>.idx</code>, and <code>.dict.dz</code> files.</p>
+          <a class="download-box" href="https://www.reader-dict.com/pt/download/pt" target="_blank">
+            <span class="dl-icon">↓</span>
+            <div class="dl-text">
+              reader-dict — Portuguese (PT-PT)
+              <span class="dl-url">reader-dict.com/pt/download/pt</span>
+            </div>
+          </a>
+        </div>
+
+        <div id="tab-src-kaikki" class="tab-panel">
+          <p class="step-desc">Download the JSONL dump from kaikki.org. Each line is one JSON object representing a headword with all its linguistic data. The file is updated weekly from the English Wiktionary. A <code>.jsonl.gz</code> compressed version is also accepted by <code>kaikki-2-tab</code>.</p>
+          <a class="download-box" href="https://kaikki.org/dictionary/downloads/pt/pt-extract.jsonl" target="_blank">
+            <span class="dl-icon">↓</span>
+            <div class="dl-text">
+              Kaikki — Portuguese JSONL dump
+              <span class="dl-url">kaikki.org/dictionary/downloads/pt/pt-extract.jsonl</span>
+            </div>
+          </a>
+          <div class="note" style="margin-top:16px;">
+            <strong>Entry coverage:</strong> part of speech, gender, plural forms, Portugal IPA pronunciation, numbered senses with domain labels and usage examples, etymology, and compound expressions as standalone lookup entries.
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- STEP 2 -->
+    <div class="step">
+      <div class="step-line"></div>
+      <div class="step-number">2</div>
+      <div class="step-content">
+        <div class="step-title">Set up folder structure</div>
+        <p class="step-desc">Place the conversion tools in <code>linux/</code>, source data in <code>data/</code>, and language files in <code>windows/</code>. Generated <code>.tsv</code>, <code>.xdxf</code>, and <code>.dic</code> files land in <code>data/out/</code>.</p>
+        <pre><span class="comment"># Expected folder structure</span>
+linux/
+  stardict-2-tab        <span class="comment"># StarDict binary → TSV</span>
+  kaikki-2-tab          <span class="comment"># Kaikki JSONL → TSV</span>
+  tab-2-xdxf            <span class="comment"># TSV → XDXF (both pipelines)</span>
+  xdxf-2-pbdic          <span class="comment"># XDXF → .dic (pure Java)</span>
+  check-pbdic           <span class="comment"># validate .dic against .xdxf</span>
+data/
+  stardict/
+    dict-pt-pt/         <span class="comment"># StarDict source (if using StarDict)</span>
+      dict-data.ifo
+      dict-data.idx
+      dict-data.dict.dz
+  kaikki/               <span class="comment"># Kaikki source (if using Kaikki)</span>
+    pt-extract.jsonl    <span class="comment"># or .jsonl.gz</span>
+  out/                  <span class="comment"># all generated files</span>
+    *.tsv  *.xdxf  *.dic
+windows/
+  converter.exe         <span class="comment"># optional Windows alternative</span>
+  pt/                   <span class="comment"># from LanguageFilesPocketbookConverter</span>
+    collates.txt  keyboard.txt  morphems.txt
+kiakki2xdxf-pten-pt.config
+kiakki2xdxf-pt-pt.config
+stardict2xdxf-pt-pt.config</pre>
+        <div class="note">
+          <strong>Language files:</strong> from <a href="https://github.com/Markismus/LanguageFilesPocketbookConverter" target="_blank">LanguageFilesPocketbookConverter</a> by <a href="https://github.com/Markismus" target="_blank">Markismus</a> — find the folder matching your target language code and place it inside <code>windows/</code>.
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 3 -->
+    <div class="step">
+      <div class="step-line"></div>
+      <div class="step-number">3</div>
+      <div class="step-content">
+        <div class="step-title">Convert to TSV and XDXF</div>
+        <p class="step-desc">
+          All tools are self-contained Java source scripts — no compilation step needed. The two-stage pipeline produces an intermediate <code>.tsv</code> file on disk, useful for inspection and debugging before committing to the final XDXF conversion.
+        </p>
+
+        <div class="tab-bar">
+          <button class="tab-btn active" onclick="switchTab(event, 'conv-stardict')">StarDict</button>
+          <button class="tab-btn" onclick="switchTab(event, 'conv-kaikki')">Kaikki</button>
+          <button class="tab-btn" onclick="switchTab(event, 'conv-config')">Shared config</button>
+        </div>
+
+        <div id="tab-conv-stardict" class="tab-panel active">
+          <p class="step-desc"><code>stardict-2-tab</code> reads the StarDict binary files and writes a TSV. <code>tab-2-xdxf</code> converts the TSV to XDXF and validates the output XML.</p>
+          <pre><span class="comment"># Give execute permission (once)</span>
+<span class="cmd">chmod</span> <span class="flag">+x</span> <span class="arg">linux/stardict-2-tab linux/kaikki-2-tab linux/tab-2-xdxf linux/xdxf-2-pbdic linux/check-pbdic</span>
+
+<span class="comment"># Step 1 — StarDict → TSV</span>
+<span class="cmd">linux/stardict-2-tab</span> <span class="flag">-i</span> <span class="arg">data/dict-pt-pt/dict-data.ifo</span> <span class="flag">-o</span> <span class="arg">data/out/dict-pt-pt.tsv</span>
+
+<span class="comment"># Step 2 — TSV → XDXF</span>
+<span class="cmd">linux/tab-2-xdxf</span> <span class="flag">-i</span> <span class="arg">data/out/dict-pt-pt.tsv</span> <span class="flag">-o</span> <span class="arg">data/out/dict-pt-pt.xdxf</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-n</span> <span class="arg">"Dicionário PT-PT"</span>
+
+<span class="comment"># Step 3 — XDXF → .dic</span>
+<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/dict-pt-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/dict-pt-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-D</span> <span class="arg">windows/pt</span></pre>
+          <div class="note">
+            <strong>Language codes:</strong> accepts ISO 639-1 (<code>pt</code>) or ISO 639-2 (<code>POR</code>) — two-letter codes are converted automatically.<br>
+            <strong>JDK required:</strong> the shebang launcher compiles on the fly; a full JDK is needed, not just the JRE.
+          </div>
+        </div>
+
+        <div id="tab-conv-kaikki" class="tab-panel">
+          <p class="step-desc"><code>kaikki-2-tab</code> parses the Kaikki JSONL and writes a TSV filtered by language code. <code>tab-2-xdxf</code> then converts it to XDXF. Both <code>.jsonl</code> and <code>.jsonl.gz</code> are accepted as input.</p>
+          <pre><span class="comment"># Give execute permission (once)</span>
+<span class="cmd">chmod</span> <span class="flag">+x</span> <span class="arg">linux/stardict-2-tab linux/kaikki-2-tab linux/tab-2-xdxf linux/xdxf-2-pbdic linux/check-pbdic</span>
+
+<span class="comment"># Step 1 — Kaikki JSONL → TSV (single language, expressions as separate entries only)</span>
+<span class="cmd">linux/kaikki-2-tab</span> <span class="flag">-i</span> <span class="arg">data/kaikki/pt-extract.jsonl</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-pt.tsv</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-e</span> <span class="arg">SEPARATE</span>
+
+<span class="comment"># Step 1 — multiple languages</span>
+<span class="cmd">linux/kaikki-2-tab</span> <span class="flag">-i</span> <span class="arg">data/kaikki/pt-extract.jsonl</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-pt-en.tsv</span> <span class="flag">-l</span> <span class="arg">pt,en</span> <span class="flag">-e</span> <span class="arg">SEPARATE</span>
+
+<span class="comment"># Step 2 — TSV → XDXF</span>
+<span class="cmd">linux/tab-2-xdxf</span> <span class="flag">-i</span> <span class="arg">data/out/kaikki-pt.tsv</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-pt.xdxf</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-n</span> <span class="arg">"Dicionário PT (Kaikki)"</span>
+
+<span class="comment"># Step 3 — XDXF → .dic</span>
+<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/kaikki-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-D</span> <span class="arg">windows/pt</span></pre>
+          <div class="note">
+            <strong>Kaikki data</strong> is updated weekly — re-download <code>pt-extract.jsonl</code> periodically to keep your dictionary current.<br>
+            <strong>--embedded-defs</strong> controls how compound expressions are emitted: <code>SEPARATE</code> (standalone lookup entries only), <code>KEEP</code> (embedded inside the parent entry only), or <code>BOTH</code> (default). Use <code>SEPARATE</code> to avoid artefact headwords from Kaikki expression data.
+          </div>
+        </div>
+
+        <div id="tab-conv-config" class="tab-panel">
+          <p class="step-desc">Each conversion has its own config file. All tools read it via <code>-c</code> and use their own namespace — CLI arguments always override config values.</p>
+          <p class="step-desc">Property keys are prefixed with the tool name, dashes removed. Setting <code>out=-</code> or <code>in=-</code> enables piping directly from the config.</p>
+
+          <pre><span class="comment"># kiakki2xdxf-pten-pt.config — Kaikki PT+EN, piped to file</span>
+
+kaikki2tab.in=data/kaikki/pt-extract.jsonl.gz
+kaikki2tab.out=-
+kaikki2tab.lang=pt,en
+kaikki2tab.embedded-defs=SEPARATE
+
+tab2xdxf.in=-
+tab2xdxf.out=data/out/kaikki-pten-pt.xdxf
+tab2xdxf.lang=pt,en
+tab2xdxf.name=Wiktionary.org PT+EN-&gt;PT (Kaikki)</pre>
+
+          <pre><span class="comment"># stardict2xdxf-pt-pt.config — StarDict, piped to file</span>
+
+stardict2tab.in=data/stardict/dict-pt-pt/dict-data.ifo
+stardict2tab.out=-
+
+tab2xdxf.in=-
+tab2xdxf.out=data/out/readerdict-pt-pt.xdxf
+tab2xdxf.lang=pt
+tab2xdxf.name=Wiktionário PT-&gt;PT (ReaderDict)</pre>
+
+          <pre><span class="comment"># Run with the chain scripts</span>
+<span class="cmd">linux/chain-kaikki-2-xdxf</span>   <span class="arg">kiakki2xdxf-pten-pt.config</span>
+<span class="cmd">linux/chain-stardict-2-xdxf</span> <span class="arg">stardict2xdxf-pt-pt.config</span>
+
+<span class="comment"># Or run tools individually</span>
+<span class="cmd">linux/kaikki-2-tab</span>  <span class="flag">-c</span> <span class="arg">kiakki2xdxf-pten-pt.config</span>
+<span class="cmd">linux/tab-2-xdxf</span>   <span class="flag">-c</span> <span class="arg">kiakki2xdxf-pten-pt.config</span>
+
+<span class="comment"># CLI override — different language</span>
+<span class="cmd">linux/kaikki-2-tab</span> <span class="flag">-c</span> <span class="arg">kiakki2xdxf-pt-pt.config</span> <span class="flag">-l</span> <span class="arg">pt,en</span> <span class="flag">-o</span> <span class="arg">-</span> <span class="flag">|</span> <span class="cmd">linux/tab-2-xdxf</span> <span class="flag">-i</span> <span class="arg">-</span> <span class="flag">-c</span> <span class="arg">kiakki2xdxf-pt-pt.config</span></pre>
+
+          <div class="note">
+            <strong>Namespaces:</strong> <code>stardict-2-tab</code> → <code>stardict2tab.*</code>, <code>kaikki-2-tab</code> → <code>kaikki2tab.*</code>, <code>tab-2-xdxf</code> → <code>tab2xdxf.*</code>, <code>xdxf-2-pbdic</code> → <code>xdxf2pcdic.*</code>, <code>check-pbdic</code> → <code>checkpbdic.*</code>.<br>
+            <strong>Piping:</strong> all progress messages go to stderr, so only data flows through the pipe. XML validation runs automatically even in pipeline mode (via a temporary file) — no flags needed.
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- STEP 4 -->
+    <div class="step">
+      <div class="step-line"></div>
+      <div class="step-number">4</div>
+      <div class="step-content">
+        <div class="step-title">Convert XDXF to .dic</div>
+        <p class="step-desc">
+          Two options: <code>xdxf-2-pbdic</code> is a pure-Java tool included in this toolchain — no Wine required. <code>converter.exe</code> is the original Windows binary, run via Wine on Linux/macOS.
+        </p>
+        <pre><span class="comment"># xdxf-2-pbdic — pure Java, no Wine needed</span>
+<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/dict-pt-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/dict-pt-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-D</span> <span class="arg">windows/pt</span> <span class="flag">-j</span> <span class="arg">false</span>
+<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/kaikki-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-D</span> <span class="arg">windows/pt</span> <span class="flag">-j</span> <span class="arg">true</span>
+
+<span class="comment"># converter.exe — via Wine</span>
+<span class="cmd">cd</span> <span class="arg">windows/</span> <span class="flag">&amp;&amp;</span> <span class="cmd">wine</span> <span class="arg">./converter.exe ../data/out/kaikki-pt.xdxf pt</span>
+
+<span class="comment"># Full chain piped into xdxf-2-pbdic (shared config)</span>
+<span class="cmd">linux/chain-kaikki-2-xdxf</span> <span class="arg">kiakki2xdxf-pt-pt.config</span>
+<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-c</span> <span class="arg">kiakki2xdxf-pt-pt.config</span></pre>
+        <div class="note">
+          <strong>Language files:</strong> the <code>-D windows/pt</code> flag points to a folder containing <code>collates.txt</code>, <code>keyboard.txt</code>, and <code>morphems.txt</code> for your target language. Download from <a href="https://github.com/Markismus/LanguageFilesPocketbookConverter" target="_blank">LanguageFilesPocketbookConverter</a> by <a href="https://github.com/Markismus" target="_blank">Markismus</a>.<br>
+          <strong>--join (required):</strong> controls how headwords that match case-insensitively are handled.
+          <code>-j true</code> merges them into one entry (lowercase headword kept, blank line between definitions) — recommended for Kaikki sources.
+          Entries whose definitions are also equal (case-insensitive) are considered exact duplicates and discarded.
+          <code>-j false</code> keeps entries with different casing separate (e.g. <em>pessoas</em> and <em>Pessoas</em>) — recommended for StarDict sources.
+          Only byte-identical duplicates (same headword exact case + same definition bytes) are discarded.
+          Set via config as <code>xdxf2pcdic.join=true</code>.<br>
+          <strong>Output:</strong> the <code>.dic</code> file is written to <code>data/out/</code>.
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 4b -->
+    <div class="step">
+      <div class="step-line"></div>
+      <div class="step-number">4b</div>
+      <div class="step-content">
+        <div class="step-title">Validate (optional)</div>
+        <p class="step-desc">
+          <code>check-pbdic</code> compares the generated <code>.dic</code> against the source XDXF, checking entry count, headword presence, sort order, and a sampled spot-check of definitions.
+        </p>
+        <pre><span class="cmd">linux/check-pbdic</span> <span class="flag">-x</span> <span class="arg">data/out/kaikki-pt.xdxf</span> <span class="flag">-d</span> <span class="arg">data/out/kaikki-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-n</span> <span class="arg">50</span></pre>
+        <div class="note">
+          Exits with code <code>0</code> on success, <code>1</code> if any check fails — suitable for use in a build script or CI pipeline.
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 5 -->
+    <div class="step">
+      <div class="step-number">5</div>
+      <div class="step-content">
+        <div class="step-title">Copy to PocketBook</div>
+        <p class="step-desc">
+          Connect your PocketBook via USB and copy the generated <code>.dic</code> file to the dictionaries folder on the device.
+        </p>
+        <pre><span class="comment"># StarDict source</span>
+<span class="cmd">cp</span> <span class="arg">data/out/dict-pt-pt.dic</span> <span class="arg">/media/POCKETBOOK/system/dictionaries/</span>
+
+<span class="comment"># Kaikki source</span>
+<span class="cmd">cp</span> <span class="arg">data/out/kaikki-pt.dic</span> <span class="arg">/media/POCKETBOOK/system/dictionaries/</span></pre>
+        <div class="note">
+          The mount point <code>/media/POCKETBOOK/</code> may differ depending on your system and distro — check where the device is mounted before copying. Safely eject the device after copying; a restart may be needed for the dictionary to appear in the language settings.
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /steps -->
+
+  <!-- ===================== LEGACY ===================== -->
+  <div class="section-label">Legacy</div>
+  <div class="deprecated">
+    <strong>dict-2-xdxf — deprecated.</strong> Earlier versions of this guide used a single <code>dict-2-xdxf</code> tool that handled both StarDict and tabfile input via a <code>--format</code> flag. It has been superseded by the modular toolchain above (<code>stardict-2-tab</code>, <code>kaikki-2-tab</code>, <code>tab-2-xdxf</code>), which separates reading and writing concerns and converges on a common TSV intermediate format. <code>dict-2-xdxf</code> remains functional for single-step StarDict or tabfile conversion, but will not receive further updates.
+  </div>
+
+  <footer>
+    <span>PocketBook Dictionary Guide</span>
+    <span class="mono">StarDict / Kaikki → TSV → XDXF → .dic</span>
+  </footer>
+
+</div>
+
+<script>
+  function switchTab(e, id) {
+    const btn = e.target;
+    const bar = btn.closest('.tab-bar');
+    const content = bar.closest('.step-content') || bar.parentElement;
+    bar.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    content.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    content.querySelector('#tab-' + id).classList.add('active');
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+#!/bin/sh
+set -e
+
+if [ -z "$1" ]; then
+  echo "Usage: chain-stardict-2-xdxf <config-file>" >&2
+  exit 1
+fi
+
+if [ ! -f "$1" ]; then
+  echo "Error: config file not found: $1" >&2
+  exit 1
+fi
+
+linux/stardict-2-tab -c "$1" | linux/tab-2-xdxf -c "$1"
