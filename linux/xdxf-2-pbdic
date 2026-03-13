@@ -13,7 +13,7 @@ import org.xml.sax.helpers.DefaultHandler;
  * xdxf-2-pbdic — convert an XDXF dictionary to PocketBook's native .dic (SDIC) format.
  *
  * Usage:
- *   linux/xdxf-2-pbdic -i data/out/dict-pt.xdxf -o data/out/dict-pt.dic -l pt [-d windows/pt] [-n "My Dict"] [-c dict.properties]
+ *   linux/xdxf-2-pbdic -i data/out/dict-pt.xdxf -o data/out/dict-pt.dic -l pt [-d lang/pt] [-n "My Dict"] [-c dict.properties]
  *
  * Required:
  *   -i / --in       Input XDXF file
@@ -21,7 +21,7 @@ import org.xml.sax.helpers.DefaultHandler;
  *   -l / --lang     Language code (e.g. pt, en) — used to locate language dir
  *
  * Optional:
- *   -d / --langdir  Language files directory (default: windows/<lang>/)
+ *   -d / --langdir  Language files directory (default: lang/<lang>/)
  *   -n / --name     Dictionary title (default: input filename without extension)
  *   -c / --config   Shared .properties config file (namespace: xdxf2dic.*)
  *
@@ -67,7 +67,7 @@ class XdxfToDic {
         String inPath  = require(config, "in",   "--in  : input XDXF file");
         String outPath = require(config, "out",  "--out : output .dic file");
         String lang    = require(config, "lang", "--lang: language code, e.g. pt");
-        String langDir = resolve(config, "langdir", "windows/" + lang);
+        String langDir = resolve(config, "langdir", "lang/" + lang);
         String name    = resolve(config, "name", null);
 
         boolean fromStdin = "-".equals(inPath);
@@ -643,7 +643,7 @@ class XdxfToDic {
         errRaw("                          keeping the lowercase headword, blank line between definitions.");
         errRaw("                  false — keep entries with different casing as separate entries.\n");
         errRaw("Optional:");
-        errRaw("  -d / --langdir  Language files dir (default: windows/<lang>/)");
+        errRaw("  -d / --langdir  Language files dir (default: lang/<lang>/)");
         errRaw("  -n / --name     Dictionary title");
         errRaw("  -c / --config   .properties config file (namespace: xdxf2dic.*)\n");
         errRaw("Example:");

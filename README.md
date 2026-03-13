@@ -31,12 +31,12 @@ chmod +x linux/stardict-2-tab linux/kaikki-2-tab linux/tab-2-xdxf linux/xdxf-2-p
 # StarDict → .dic (using xdxf-2-pbdic)
 linux/stardict-2-tab -i data/stardict/dict-pt-pt/dict-data.ifo -o data/out/dict-pt-pt.tsv
 linux/tab-2-xdxf    -i data/out/dict-pt-pt.tsv -o data/out/dict-pt-pt.xdxf -l pt -n "Dicionário PT-PT"
-linux/xdxf-2-pbdic  -i data/out/dict-pt-pt.xdxf -o data/out/dict-pt-pt.dic -l pt -D windows/pt -j false
+linux/xdxf-2-pbdic  -i data/out/dict-pt-pt.xdxf -o data/out/dict-pt-pt.dic -l pt -D lang/pt -j false
 
 # Kaikki → .dic (using xdxf-2-pbdic)
 linux/kaikki-2-tab -i data/kaikki/pt-extract.jsonl -l pt -e SEPARATE -o data/out/kaikki-pt.tsv
 linux/tab-2-xdxf   -i data/out/kaikki-pt.tsv -o data/out/kaikki-pt.xdxf -l pt -n "Dicionário PT (Kaikki)"
-linux/xdxf-2-pbdic -i data/out/kaikki-pt.xdxf -o data/out/kaikki-pt.dic -l pt -D windows/pt -j true
+linux/xdxf-2-pbdic -i data/out/kaikki-pt.xdxf -o data/out/kaikki-pt.dic -l pt -D lang/pt -j true
 
 # Kaikki → .xdxf piped (no intermediate .tsv)
 linux/chain-kaikki-2-xdxf confs/kiakki2xdxf-pten-pt.config
@@ -82,7 +82,7 @@ data/
     dict-pt-pt/ dict-data.ifo  .idx  .dict.dz
   kaikki/       pt-extract.jsonl  (or .jsonl.gz)
   out/          *.tsv  *.xdxf  *.dic
-windows/
+lang/
   pt/           collates.txt  keyboard.txt  morphems.txt
 confs/kiakki2xdxf-pten-pt.config
 confs/kiakki2xdxf-pt-pt.config

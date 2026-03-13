@@ -42,10 +42,7 @@ import java.util.zip.GZIPInputStream;
  */
 public class StarDict2Tab {
 
-    static final String TOOL = "stardict-2-tab";
-
-    static void err(String msg) { System.err.println((msg!=null && !msg.isBlank()? TOOL + ": ":"") + msg); }
-    static void errRaw(String msg) { System.err.println(msg); }
+    static void err(String msg) { System.err.println(msg); }
 
     record Entry(String word, String definition) {}
     record RawEntry(String word, int offset, int size) {}
@@ -88,11 +85,10 @@ public class StarDict2Tab {
             System.exit(1);
         }
 
-        String cp = configPath;
-        err("Configuration:");
-        errRaw("  input   : " + inFile);
-        errRaw("  output  : " + (toStdout ? "<stdout>" : output));
-        if (cp != null) errRaw("  config  : " + cp);
+        err("stardict-2-tab");
+        err("  input   : " + inFile);
+        err("  output  : " + (toStdout ? "<stdout>" : output));
+        if (cp != null) err("  config  : " + cp);
         err("");
 
         var entries = readStarDict(inFile);
@@ -195,7 +191,7 @@ public class StarDict2Tab {
     }
 
     static void printUsage() {
-        errRaw("""
+        err("""
             Usage: stardict-2-tab --in|-i <input.ifo> --out|-o <output.tsv|->
                                   [--config|-c <config.properties>]
 

@@ -597,12 +597,12 @@
 <span class="cmd">wget</span> <span class="arg">https://github.com/Markismus/LanguageFilesPocketbookConverter/archive/refs/heads/master.zip</span> <span class="flag">-O</span> <span class="arg">langfiles.zip</span>
 <span class="cmd">unzip</span> <span class="arg">langfiles.zip</span>
 
-<span class="comment"># Copy the folder for your target language into windows/</span>
-<span class="cmd">mkdir</span> <span class="flag">-p</span> <span class="arg">windows/</span>
-<span class="cmd">cp</span> <span class="flag">-r</span> <span class="arg">LanguageFilesPocketbookConverter-master/pt</span> <span class="arg">windows/pt</span></pre>
+<span class="comment"># Copy the folder for your target language into lang/</span>
+<span class="cmd">mkdir</span> <span class="flag">-p</span> <span class="arg">lang/</span>
+<span class="cmd">cp</span> <span class="flag">-r</span> <span class="arg">LanguageFilesPocketbookConverter-master/pt</span> <span class="arg">lang/pt</span></pre>
         <div class="note">
           <strong>Files needed per language:</strong> <code>collates.txt</code>, <code>keyboard.txt</code>, <code>morphems.txt</code> — all three must be present in the language folder.
-          The folder name must match the language code passed to <code>--lang</code> (e.g. <code>windows/pt</code> for <code>-l pt</code>).
+          The folder name must match the language code passed to <code>--lang</code> (e.g. <code>lang/pt</code> for <code>-l pt</code>).
         </div>
         <div class="note" style="margin-top:8px;">
           <strong>License note:</strong> the LanguageFilesPocketbookConverter repository carries no explicit license.
@@ -625,7 +625,7 @@
       <div class="step-number">3</div>
       <div class="step-content">
         <div class="step-title">Set up folder structure</div>
-        <p class="step-desc">Place the conversion tools in <code>linux/</code>, source data in <code>data/</code>, and the language files you downloaded in <code>windows/</code>. Generated <code>.tsv</code>, <code>.xdxf</code>, and <code>.dic</code> files land in <code>data/out/</code>.</p>
+        <p class="step-desc">Place the conversion tools in <code>linux/</code>, source data in <code>data/</code>, and the language files you downloaded in <code>lang/</code>. Generated <code>.tsv</code>, <code>.xdxf</code>, and <code>.dic</code> files land in <code>data/out/</code>.</p>
         <pre><span class="comment"># Expected folder structure</span>
 linux/
   stardict-2-tab        <span class="comment"># StarDict binary → TSV</span>
@@ -643,14 +643,14 @@ data/
     pt-extract.jsonl    <span class="comment"># or .jsonl.gz</span>
   out/                  <span class="comment"># all generated files</span>
     *.tsv  *.xdxf  *.dic
-windows/                <span class="comment"># NOT in repo — download separately (see step 2)</span>
+lang/                <span class="comment"># NOT in repo — download separately (see step 2)</span>
   pt/
     collates.txt  keyboard.txt  morphems.txt
 confs/kiakki2xdxf-pten-pt.config
 confs/kiakki2xdxf-pt-pt.config
 confs/stardict2xdxf-pt-pt.config</pre>
         <div class="note">
-          <strong>Language files</strong> go in <code>windows/&lt;lang&gt;/</code> — this folder is <em>not</em> distributed with the toolchain. See step 2 for how to obtain them.
+          <strong>Language files</strong> go in <code>lang/&lt;lang&gt;/</code> — this folder is <em>not</em> distributed with the toolchain. See step 2 for how to obtain them.
         </div>
       </div>
     </div>
@@ -683,7 +683,7 @@ confs/stardict2xdxf-pt-pt.config</pre>
 <span class="cmd">linux/tab-2-xdxf</span> <span class="flag">-i</span> <span class="arg">data/out/dict-pt-pt.tsv</span> <span class="flag">-o</span> <span class="arg">data/out/dict-pt-pt.xdxf</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-n</span> <span class="arg">"Dicionário PT-PT"</span>
 
 <span class="comment"># Step 3 — XDXF → .dic</span>
-<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/dict-pt-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/dict-pt-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-D</span> <span class="arg">windows/pt</span></pre>
+<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/dict-pt-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/dict-pt-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-D</span> <span class="arg">lang/pt</span></pre>
           <div class="note">
             <strong>Language codes:</strong> accepts ISO 639-1 (<code>pt</code>) or ISO 639-2 (<code>POR</code>) — two-letter codes are converted automatically.<br>
             <strong>JDK required:</strong> the shebang launcher compiles on the fly; a full JDK is needed, not just the JRE.
@@ -705,7 +705,7 @@ confs/stardict2xdxf-pt-pt.config</pre>
 <span class="cmd">linux/tab-2-xdxf</span> <span class="flag">-i</span> <span class="arg">data/out/kaikki-pt.tsv</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-pt.xdxf</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-n</span> <span class="arg">"Dicionário PT (Kaikki)"</span>
 
 <span class="comment"># Step 3 — XDXF → .dic</span>
-<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/kaikki-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-D</span> <span class="arg">windows/pt</span></pre>
+<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/kaikki-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-D</span> <span class="arg">lang/pt</span></pre>
           <div class="note">
             <strong>Kaikki data</strong> is updated weekly — re-download <code>pt-extract.jsonl</code> periodically to keep your dictionary current.<br>
             <strong>--embedded-defs</strong> controls how compound expressions are emitted: <code>SEPARATE</code> (standalone lookup entries only), <code>KEEP</code> (embedded inside the parent entry only), or <code>BOTH</code> (default). Use <code>SEPARATE</code> to avoid artefact headwords from Kaikki expression data.
@@ -768,14 +768,14 @@ tab2xdxf.name=Wiktionário PT-&gt;PT (ReaderDict)</pre>
           <code>xdxf-2-pbdic</code> is a pure-Java tool included in this toolchain — no Wine or closed-source dependencies required.
         </p>
         <pre><span class="comment"># StarDict pipeline</span>
-<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/dict-pt-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/dict-pt-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-D</span> <span class="arg">windows/pt</span> <span class="flag">-j</span> <span class="arg">false</span>
-<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/kaikki-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-D</span> <span class="arg">windows/pt</span> <span class="flag">-j</span> <span class="arg">true</span>
+<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/dict-pt-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/dict-pt-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-D</span> <span class="arg">lang/pt</span> <span class="flag">-j</span> <span class="arg">false</span>
+<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/kaikki-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-D</span> <span class="arg">lang/pt</span> <span class="flag">-j</span> <span class="arg">true</span>
 
 <span class="comment"># Full chain piped into xdxf-2-pbdic (shared config)</span>
 <span class="cmd">linux/chain-kaikki-2-xdxf</span> <span class="arg">confs/kiakki2xdxf-pt-pt.config</span>
 <span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-c</span> <span class="arg">confs/kiakki2xdxf-pt-pt.config</span></pre>
         <div class="note">
-          <strong>Language files:</strong> the <code>-D windows/pt</code> flag points to a folder containing <code>collates.txt</code>, <code>keyboard.txt</code>, and <code>morphems.txt</code> for your target language. Download from <a href="https://github.com/Markismus/LanguageFilesPocketbookConverter" target="_blank">LanguageFilesPocketbookConverter</a> by <a href="https://github.com/Markismus" target="_blank">Markismus</a>.<br>
+          <strong>Language files:</strong> the <code>-D lang/pt</code> flag points to a folder containing <code>collates.txt</code>, <code>keyboard.txt</code>, and <code>morphems.txt</code> for your target language. Download from <a href="https://github.com/Markismus/LanguageFilesPocketbookConverter" target="_blank">LanguageFilesPocketbookConverter</a> by <a href="https://github.com/Markismus" target="_blank">Markismus</a>.<br>
           <strong>--join (required):</strong> controls how headwords that match case-insensitively are handled.
           <code>-j true</code> merges them into one entry (lowercase headword kept, blank line between definitions) — recommended for Kaikki sources.
           Entries whose definitions are also equal (case-insensitive) are considered exact duplicates and discarded.
