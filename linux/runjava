@@ -1,0 +1,19 @@
+#!/usr/bin/bash
+# Launches java program passing all parameters after the java name
+# $1 the java file name
+# $>1 all parameters to be passed to the java program
+
+if [[ "$1" == "" ]]; then
+  echo "A java program must be passed as first parameter" >&2
+  exit 1
+fi
+
+file_java="$1"
+
+loc_self=$(dirname $(realpath $0))
+loc_java="$(dirname $loc_self)/java"
+
+shift
+
+java --source 17 "$loc_java/$file_java" $*
+
