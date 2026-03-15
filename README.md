@@ -6,7 +6,7 @@ Convert **StarDict** or **Kaikki (Wiktionary)** dictionaries to PocketBook's nat
 
 ## Requirements
 
-- Java 17+ JDK
+- Java 17+ JDK (`java` must be on PATH)
 - Language files from [LanguageFilesPocketbookConverter](https://github.com/Markismus/LanguageFilesPocketbookConverter) (one folder per language)
 
 ## Pipelines
@@ -26,7 +26,7 @@ The `.tsv` intermediate is kept on disk for inspection. Use `out=-` / `in=-` to 
 ## Quick Start
 
 ```bash
-chmod +x linux/stardict-2-tab linux/kaikki-2-tab linux/tab-2-xdxf linux/xdxf-2-pbdic linux/check-pbdic
+chmod +x linux/stardict-2-tab linux/kaikki-2-tab linux/tab-2-xdxf linux/xdxf-2-pbdic linux/check-pbdic linux/runjava
 
 # StarDict → .dic (using xdxf-2-pbdic)
 linux/stardict-2-tab -i data/stardict/dict-pt-pt/dict-data.ifo -o data/out/dict-pt-pt.tsv
@@ -76,7 +76,9 @@ Namespaces: `stardict-2-tab` → `stardict2tab.*` · `kaikki-2-tab` → `kaikki2
 ## Folder Structure
 
 ```
-linux/          stardict-2-tab  kaikki-2-tab  tab-2-xdxf  xdxf-2-pbdic  check-pbdic
+linux/          stardict-2-tab  kaikki-2-tab  tab-2-xdxf  xdxf-2-pbdic  check-pbdic  runjava
+java/           ConvStardict2Tab.java  ConvKaikki2Tab.java  ConvTab2Xdxf.java
+                ConvXdxf2Pbdic.java   CheckPbdic.java
 data/
   stardict/
     dict-pt-pt/ dict-data.ifo  .idx  .dict.dz
@@ -100,6 +102,13 @@ confs/stardict2xdxf-pt-pt.config
 | `check-pbdic` | `.dic` + `.xdxf` | Validation report |
 
 See `pocketbook-dict-guide.html` for full documentation.
+
+## Project Structure
+
+The tool logic lives in `java/` as standard `.java` source files (one class per tool).
+The `linux/` scripts are thin wrappers that delegate to `runjava`, which locates the
+`java/` directory relative to itself and invokes `java --source 17 <ClassName>.java`.
+No compilation step is needed.
 
 ---
 

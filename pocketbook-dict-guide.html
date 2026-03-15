@@ -625,14 +625,21 @@
       <div class="step-number">3</div>
       <div class="step-content">
         <div class="step-title">Set up folder structure</div>
-        <p class="step-desc">Place the conversion tools in <code>linux/</code>, source data in <code>data/</code>, and the language files you downloaded in <code>lang/</code>. Generated <code>.tsv</code>, <code>.xdxf</code>, and <code>.dic</code> files land in <code>data/out/</code>.</p>
+        <p class="step-desc">The tool logic lives in <code>java/</code> as standard <code>.java</code> source files. The <code>linux/</code> scripts are thin wrappers that delegate to <code>runjava</code>, which locates <code>java/</code> relative to itself and invokes <code>java --source 17</code>. No compilation step is needed. Source data goes in <code>data/</code>, language files in <code>lang/</code>, and generated files land in <code>data/out/</code>.</p>
         <pre><span class="comment"># Expected folder structure</span>
 linux/
-  stardict-2-tab        <span class="comment"># StarDict binary → TSV</span>
-  kaikki-2-tab          <span class="comment"># Kaikki JSONL → TSV</span>
-  tab-2-xdxf            <span class="comment"># TSV → XDXF (both pipelines)</span>
-  xdxf-2-pbdic          <span class="comment"># XDXF → .dic (pure Java)</span>
-  check-pbdic           <span class="comment"># validate .dic against .xdxf</span>
+  stardict-2-tab        <span class="comment"># wrapper → ConvStardict2Tab.java</span>
+  kaikki-2-tab          <span class="comment"># wrapper → ConvKaikki2Tab.java</span>
+  tab-2-xdxf            <span class="comment"># wrapper → ConvTab2Xdxf.java</span>
+  xdxf-2-pbdic          <span class="comment"># wrapper → ConvXdxf2Pbdic.java</span>
+  check-pbdic           <span class="comment"># wrapper → CheckPbdic.java</span>
+  runjava               <span class="comment"># launcher: resolves java/ and runs java --source 17</span>
+java/
+  ConvStardict2Tab.java <span class="comment"># StarDict → TSV</span>
+  ConvKaikki2Tab.java   <span class="comment"># Kaikki JSONL → TSV</span>
+  ConvTab2Xdxf.java     <span class="comment"># TSV → XDXF</span>
+  ConvXdxf2Pbdic.java   <span class="comment"># XDXF → .dic</span>
+  CheckPbdic.java       <span class="comment"># validate .dic against .xdxf</span>
 data/
   stardict/
     dict-pt-pt/         <span class="comment"># StarDict source (if using StarDict)</span>
@@ -674,7 +681,7 @@ confs/stardict2xdxf-pt-pt.config</pre>
         <div id="tab-conv-stardict" class="tab-panel active">
           <p class="step-desc"><code>stardict-2-tab</code> reads the StarDict binary files and writes a TSV. <code>tab-2-xdxf</code> converts the TSV to XDXF and validates the output XML.</p>
           <pre><span class="comment"># Give execute permission (once)</span>
-<span class="cmd">chmod</span> <span class="flag">+x</span> <span class="arg">linux/stardict-2-tab linux/kaikki-2-tab linux/tab-2-xdxf linux/xdxf-2-pbdic linux/check-pbdic</span>
+<span class="cmd">chmod</span> <span class="flag">+x</span> <span class="arg">linux/stardict-2-tab linux/kaikki-2-tab linux/tab-2-xdxf linux/xdxf-2-pbdic linux/check-pbdic linux/runjava</span>
 
 <span class="comment"># Step 1 — StarDict → TSV</span>
 <span class="cmd">linux/stardict-2-tab</span> <span class="flag">-i</span> <span class="arg">data/dict-pt-pt/dict-data.ifo</span> <span class="flag">-o</span> <span class="arg">data/out/dict-pt-pt.tsv</span>
@@ -693,7 +700,7 @@ confs/stardict2xdxf-pt-pt.config</pre>
         <div id="tab-conv-kaikki" class="tab-panel">
           <p class="step-desc"><code>kaikki-2-tab</code> parses the Kaikki JSONL and writes a TSV filtered by language code. <code>tab-2-xdxf</code> then converts it to XDXF. Both <code>.jsonl</code> and <code>.jsonl.gz</code> are accepted as input.</p>
           <pre><span class="comment"># Give execute permission (once)</span>
-<span class="cmd">chmod</span> <span class="flag">+x</span> <span class="arg">linux/stardict-2-tab linux/kaikki-2-tab linux/tab-2-xdxf linux/xdxf-2-pbdic linux/check-pbdic</span>
+<span class="cmd">chmod</span> <span class="flag">+x</span> <span class="arg">linux/stardict-2-tab linux/kaikki-2-tab linux/tab-2-xdxf linux/xdxf-2-pbdic linux/check-pbdic linux/runjava</span>
 
 <span class="comment"># Step 1 — Kaikki JSONL → TSV (single language, expressions as separate entries only)</span>
 <span class="cmd">linux/kaikki-2-tab</span> <span class="flag">-i</span> <span class="arg">data/kaikki/pt-extract.jsonl</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-pt.tsv</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-e</span> <span class="arg">SEPARATE</span>

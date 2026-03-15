@@ -38,7 +38,7 @@ import java.util.zip.GZIPInputStream;
  *
  * <br><b>Requirements:</b> Java 17+ JDK ({@code java} must be on PATH)
  */
-public class ConvStarDict2Tab {
+public class ConvStardict2Tab {
 
     static void err(String msg) { System.err.println(msg); }
 
