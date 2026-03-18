@@ -64,6 +64,8 @@ public class ConvKaikki2Tab {
 
     static void err(String msg) { System.err.println(TOOL + ": " + msg); }
     static void errRaw(String msg) { System.err.println(msg); }
+    
+    static String lang = null;
 
     @SuppressWarnings("unchecked")
     public static void main(String[] args) throws Exception {
@@ -96,6 +98,8 @@ public class ConvKaikki2Tab {
             printUsage();
             System.exit(1);
         }
+        
+        lang = langArg;
 
         String ewArg = resolve(cli, config, "embedded-defs");
         if (ewArg == null) ewArg = "BOTH";
@@ -229,6 +233,7 @@ public class ConvKaikki2Tab {
 
     @SuppressWarnings("unchecked")
     static String buildDefinition(Map<String, Object> obj, boolean emitEmbedded) {
+        var keepExpressionsWithEmptyContent = true;
         var tags  = (List<Object>) obj.getOrDefault("tags", List.of());
         var senses = (List<Object>) obj.getOrDefault("senses", List.of());
 
@@ -254,13 +259,13 @@ public class ConvKaikki2Tab {
         // 1. Part of speech + gender
         String posTitle = str(obj, "pos_title");
         if (posTitle == null) posTitle = str(obj, "pos");
-        String gender = tags.contains("masculine") ? "masculino"
-                      : tags.contains("feminine")  ? "feminino"
+        String gender = tags.contains("masculine") ? "masculine"
+                      : tags.contains("feminine")  ? "feminine"
                       : null;
 
         if (posTitle != null) {
             sb.append("<p><b>").append(escapeXml(posTitle)).append("</b>");
-            if (gender != null) sb.append(" (").append(gender).append(")");
+            if (gender != null) sb.append(" (").append(translateTerm(gender)).append(")");
             sb.append("</p>");
         }
 
@@ -276,8 +281,9 @@ public class ConvKaikki2Tab {
                     if (form != null) plurals.add(form);
                 }
             }
-            if (!plurals.isEmpty())
-                sb.append("<p><i>Plural:</i> ").append(escapeXml(String.join(", ", plurals))).append("</p>");
+            if (!plurals.isEmpty()) {
+                sb.append("<p><i>" + translateTerm("plural") + " :</i> ").append(escapeXml(String.join(", ", plurals))).append("</p>");
+            }
         }
 
         // 3. Pronunciation (Portugal only)
@@ -294,7 +300,7 @@ public class ConvKaikki2Tab {
                 ipas.add(ipa);
         }
         if (!ipas.isEmpty())
-            sb.append("<p><i>Pronúncia:</i> ").append(escapeXml(String.join(", ", ipas))).append("</p>");
+            sb.append("<p><i>" + translateTermCap("sounds") + ": </i> ").append(escapeXml(String.join(", ", ipas))).append("</p>");
 
         // 4. Senses
         sb.append("<ol>");
@@ -320,7 +326,7 @@ public class ConvKaikki2Tab {
                 var ex = (Map<String, Object>) examples.get(0);
                 String text = str(ex, "text");
                 if (text != null)
-                    sb.append(" <i>Ex.: ").append(escapeXml(stripWiki(text))).append("</i>");
+                    sb.append(" <i>" + translateTerm("example") + ": ").append(escapeXml(stripWiki(text))).append("</i>");
             }
 
             sb.append("</li>");
@@ -332,27 +338,40 @@ public class ConvKaikki2Tab {
         if (!etymTexts.isEmpty()) {
             String etym = etymTexts.get(0).toString().strip();
             if (etym.startsWith(":")) etym = etym.substring(1).strip();
-            sb.append("<p><i>Etimologia:</i> ").append(escapeXml(etym)).append("</p>");
+            sb.append("<p><i>" + translateTermCap("ethymology") + ": </i> ").append(escapeXml(etym)).append("</p>");
         }
 
         // 6. Expressions
         if (emitEmbedded) {
         var expressions = (List<Object>) obj.getOrDefault("expressions", List.of());
         if (!expressions.isEmpty()) {
-            sb.append("<p><b>Expressões:</b></p><ul>");
+            sb.append("<p><b>" + translateTermCap("expressions") + "</b></p><ul>");
             for (var e : expressions) {
                 var expr = (Map<String, Object>) e;
                 String exprWord = str(expr, "word");
                 if (exprWord == null || exprWord.isBlank()) continue;
                 var exprSenses = (List<Object>) expr.getOrDefault("senses", List.of());
-                if (exprSenses.isEmpty()) continue;
-                var exprSense = (Map<String, Object>) exprSenses.get(0);
-                var exprGlosses = (List<Object>) exprSense.getOrDefault("glosses", List.of());
-                if (exprGlosses.isEmpty()) continue;
-                String domain = domain(exprSense);
-                sb.append("<li><b>").append(escapeXml(exprWord)).append("</b> — ");
-                if (domain != null) sb.append("<b>[").append(escapeXml(domain)).append("]</b> ");
-                sb.append(escapeXml(stripWiki(exprGlosses.get(0).toString()))).append("</li>");
+                
+                if (exprSenses.isEmpty() && !keepExpressionsWithEmptyContent) continue;
+  
+                var sbContent = new StringBuilder();
+                if(!exprSenses.isEmpty()) {
+                    var exprSense = (Map<String, Object>) exprSenses.get(0);
+                    String domain = domain(exprSense);
+                    if (domain != null) {
+                        sbContent.append("<b>[").append(escapeXml(domain)).append("]</b>");
+                    }
+                    var exprGlosses = (List<Object>) exprSense.getOrDefault("glosses", List.of());
+                    if(!exprGlosses.isEmpty()) {
+                        sb.append(escapeXml(stripWiki(exprGlosses.get(0).toString())));
+                    }
+                }
+
+                sb.append("<li><b>").append(escapeXml(exprWord)).append("</b>");
+                if(sbContent.length() > 0) {
+                    sb.append(" - ").append(sbContent);
+                }
+                sb.append("</li>");
             }
             sb.append("</ul>");
         }
@@ -372,6 +391,31 @@ public class ConvKaikki2Tab {
         if (!topics.isEmpty()) return topics.get(0).toString();
         return null;
     }
+    
+    /** Returns translated term, falling back to received one. */
+    static String translateTerm(String term) {
+       if(term == null || term.isBlank()) return "";  
+       term = term.trim();
+       
+       String result = null;
+       // TODO: read mapping from a parameter file, using language stored in global lang
+       
+       // by default return the received translateTerm
+       result = result != null? result : term; 
+       
+       return escapeXml(result); 
+    }
+
+    /** Returns translated term returning with capital first, falling back to received one. */
+    static String translateTermCap(String term) {
+       String result = translateTerm(term);
+       
+       // by default return the received translateTerm
+       result = result == null? result : result.substring(0,1).toUpperCase()+result.substring(1); 
+       
+       return escapeXml(result); 
+    }
+
 
     /** Collapses internal newlines and tabs — TSV requires one line per entry. */
     static String sanitize(String s) {

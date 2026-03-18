@@ -15,5 +15,5 @@ loc_java="$(dirname $loc_self)/java"
 
 shift
 
-java --source 17 "$loc_java/$file_java" $*
+java --source 17 "$loc_java/$file_java" "$@"
 

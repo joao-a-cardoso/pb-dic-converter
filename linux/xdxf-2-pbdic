@@ -1,2 +1,2 @@
 #!/usr/bin/bash
-$(dirname $(realpath $0))/runjava ConvXdxf2Pbdic.java $*
+$(dirname $(realpath $0))/runjava ConvXdxf2Pbdic.java "$@"

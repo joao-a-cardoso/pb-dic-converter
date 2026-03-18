@@ -89,23 +89,27 @@ class ConvXdxfToDic {
         }
 
         String cp = config.get("config");
-        String joinVal = config.get("join");
-        if (joinVal == null) {
-            err("Error: missing required argument --join true|false : join case-insensitive duplicate headwords");
+        String mergeVal = config.get("merge-defs");
+        if (mergeVal == null) {
+            err("Error: missing required argument -m / --merge-defs ALWAYS|EXACT|NEVER");
+            errRaw("  ALWAYS -- merge headwords that match case-insensitively; drop identical entries");
+            errRaw("  EXACT  -- merge headwords that match exactly (case-sensitive); drop identical entries");
+            errRaw("  NEVER  -- never merge; only drop byte-identical duplicates");
             System.exit(1);
         }
-        if (!joinVal.equalsIgnoreCase("true") && !joinVal.equalsIgnoreCase("false")) {
-            err(String.format("Error: --join must be 'true' or 'false', got: %s", joinVal));
+        mergeVal = mergeVal.toUpperCase();
+        if (!mergeVal.equals("ALWAYS") && !mergeVal.equals("EXACT") && !mergeVal.equals("NEVER")) {
+            err(String.format("Error: -m / --merge-defs must be ALWAYS, EXACT or NEVER, got: %s", mergeVal));
             System.exit(1);
         }
-        boolean joinHeadwords = "true".equalsIgnoreCase(joinVal);
+        final String joinMode = mergeVal;
         err("Configuration:");
         errRaw(String.format("  input   : %s", (fromStdin ? "<stdin>" : xdxfFile)));
         errRaw(String.format("  output  : %s", dicFile));
         errRaw(String.format("  lang    : %s", lang));
         errRaw(String.format("  langdir : %s", langDirPath));
         errRaw(String.format("  name    : %s", name));
-        errRaw(String.format("  join    : %s", joinHeadwords));
+        errRaw(String.format("  merge-defs: %s", joinMode));
         if (cp != null) errRaw(String.format("  config  : %s", cp));
         err("");
 
@@ -126,42 +130,42 @@ class ConvXdxfToDic {
         err("Sorting...");
         entries.sort(Comparator.comparing(e -> collatedKey(e.word(), collation)));
 
-        // 4. Merge duplicate headwords.
-        //    --join true  : same headword (equalsIgnoreCase) → merge into one entry,
-        //                   keeping the lowercase headword, blank line (0x0a 0x20 0x0a) between definitions.
-        //                   Exact duplicates (same headword + same definition, equalsIgnoreCase) are discarded.
-        //    --join false : only exact-case duplicates with identical definitions are discarded;
-        //                   "pessoas" vs "Pessoas" are kept as separate entries.
+        // 4. Merge/dedup headwords according to -m / --merge-defs mode:
+        //    ALWAYS — headword match is case-insensitive; merge different defs, drop identical
+        //    EXACT  — headword match is case-sensitive;   merge different defs, drop identical
+        //    NEVER  — headword match is case-sensitive;   never merge, only drop byte-identical duplicates
         err("Merging duplicates...");
         var merged = new ArrayList<Entry>(entries.size());
         for (Entry e : entries) {
             if (!merged.isEmpty()) {
                 Entry prev = merged.get(merged.size()-1);
-                boolean sameWord = joinHeadwords
+                boolean sameWord = joinMode.equals("ALWAYS")
                     ? prev.word().equalsIgnoreCase(e.word())
                     : prev.word().equals(e.word());
                 if (sameWord) {
-                    boolean sameDef = joinHeadwords
-                        ? new String(prev.definition(), StandardCharsets.UTF_8)
-                              .equalsIgnoreCase(new String(e.definition(), StandardCharsets.UTF_8))
-                        : Arrays.equals(prev.definition(), e.definition());
-                    if (!sameDef) {
+                    boolean sameDef = Arrays.equals(prev.definition(), e.definition());
+                    if (!sameDef && !joinMode.equals("NEVER")) {
                         merged.remove(merged.size()-1);
-                        // keep lowercase headword
-                        String keepWord = joinHeadwords
+                        // ALWAYS: keep lowercase headword; EXACT: keep first
+                        String keepWord = joinMode.equals("ALWAYS")
                             ? (prev.word().equals(prev.word().toLowerCase(java.util.Locale.ROOT))
                                 ? prev.word() : e.word())
                             : prev.word();
                         merged.add(new Entry(keepWord, joinDefsBlankLine(prev.definition(), e.definition())));
+                    } else if (sameDef) {
+                        // byte-identical duplicate — discard silently
+                    } else {
+                        // NEVER mode, different defs — keep both
+                        merged.add(e);
+                        continue;
                     }
-                    // else: exact duplicate — discard silently
                     continue;
                 }
             }
             merged.add(e);
         }
         int mergedCount = entries.size() - merged.size();
-        if (mergedCount > 0) err(String.format("Merged/deduped %d entries (join=%s).", mergedCount, joinHeadwords));
+        if (mergedCount > 0) err(String.format("Merged/deduped %d entries (merge-defs=%s)", mergedCount, joinMode));
         entries = merged;
 
         // 5. Pack into blocks
@@ -591,7 +595,7 @@ class ConvXdxfToDic {
                 case "--lang",    "-l" -> cli.put("lang",    args[++i]);
                 case "--langdir", "-d" -> cli.put("langdir", args[++i]);
                 case "--name",    "-n" -> cli.put("name",    args[++i]);
-                case "--join",    "-j" -> cli.put("join",    args[++i]);
+                case "--merge-defs", "-m" -> cli.put("merge-defs", args[++i]);
                 default -> err(String.format("Warning: unknown argument '%s', ignoring.", args[i]));
             }
         }
@@ -604,7 +608,7 @@ class ConvXdxfToDic {
         }
         // Merge props into cli (cli wins)
         String NS = "xdxf2pcdic.";
-        for (String key : List.of("in","out","lang","langdir","name","join")) {
+        for (String key : List.of("in","out","lang","langdir","name","merge-defs")) {
             if (!cli.containsKey(key)) {
                 String v = props.getProperty(NS + key);
                 if (v == null) v = props.getProperty(key);
@@ -637,9 +641,9 @@ class ConvXdxfToDic {
         errRaw("  -i / --in       Input XDXF file, or - to read from stdin");
         errRaw("  -o / --out      Output .dic file");
         errRaw("  -l / --lang     Language code (e.g. pt, en, fr)");
-        errRaw("  -j / --join     true  — merge headwords that match case-insensitively,");
-        errRaw("                          keeping the lowercase headword, blank line between definitions.");
-        errRaw("                  false — keep entries with different casing as separate entries.\n");
+        errRaw("  -m / --merge-defs  ALWAYS — headword match is case-insensitive; merge different defs, drop identical");
+        errRaw("                     EXACT  — headword match is case-sensitive;   merge different defs, drop identical");
+        errRaw("                     NEVER  — never merge; only drop byte-identical duplicates\n");
         errRaw("Optional:");
         errRaw("  -d / --langdir  Language files dir (default: lang/<lang>/)");
         errRaw("  -n / --name     Dictionary title");

@@ -1,2 +1,2 @@
 #!/usr/bin/bash
-$(dirname $(realpath $0))/runjava ConvKaikki2Tab.java $*
+$(dirname $(realpath $0))/runjava ConvKaikki2Tab.java "$@"

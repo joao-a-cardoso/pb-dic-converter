@@ -566,11 +566,11 @@
 
         <div id="tab-src-kaikki" class="tab-panel">
           <p class="step-desc">Download the JSONL dump from kaikki.org. Each line is one JSON object representing a headword with all its linguistic data. The file is updated weekly from the English Wiktionary. A <code>.jsonl.gz</code> compressed version is also accepted by <code>kaikki-2-tab</code>.</p>
-          <a class="download-box" href="https://kaikki.org/dictionary/downloads/pt/pt-extract.jsonl" target="_blank">
+          <a class="download-box" href="https://kaikki.org/dictionary/downloads/pt/pt-extract.jsonl.gz" target="_blank">
             <span class="dl-icon">↓</span>
             <div class="dl-text">
               Kaikki — Portuguese JSONL dump
-              <span class="dl-url">kaikki.org/dictionary/downloads/pt/pt-extract.jsonl</span>
+              <span class="dl-url">kaikki.org/dictionary/downloads/pt/pt-extract.jsonl.gz</span>
             </div>
           </a>
           <div class="note" style="margin-top:16px;">
@@ -775,20 +775,19 @@ tab2xdxf.name=Wiktionário PT-&gt;PT (ReaderDict)</pre>
           <code>xdxf-2-pbdic</code> is a pure-Java tool included in this toolchain — no Wine or closed-source dependencies required.
         </p>
         <pre><span class="comment"># StarDict pipeline</span>
-<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/dict-pt-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/dict-pt-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-D</span> <span class="arg">lang/pt</span> <span class="flag">-j</span> <span class="arg">false</span>
-<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/kaikki-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-D</span> <span class="arg">lang/pt</span> <span class="flag">-j</span> <span class="arg">true</span>
+<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/dict-pt-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/dict-pt-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-D</span> <span class="arg">lang/pt</span> <span class="flag">-m</span> <span class="arg">EXACT</span>
+<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/kaikki-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-D</span> <span class="arg">lang/pt</span> <span class="flag">-m</span> <span class="arg">ALWAYS</span>
 
 <span class="comment"># Full chain piped into xdxf-2-pbdic (shared config)</span>
 <span class="cmd">linux/chain-kaikki-2-xdxf</span> <span class="arg">confs/kiakki2xdxf-pt-pt.config</span>
 <span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-c</span> <span class="arg">confs/kiakki2xdxf-pt-pt.config</span></pre>
         <div class="note">
           <strong>Language files:</strong> the <code>-D lang/pt</code> flag points to a folder containing <code>collates.txt</code>, <code>keyboard.txt</code>, and <code>morphems.txt</code> for your target language. Download from <a href="https://github.com/Markismus/LanguageFilesPocketbookConverter" target="_blank">LanguageFilesPocketbookConverter</a> by <a href="https://github.com/Markismus" target="_blank">Markismus</a>.<br>
-          <strong>--join (required):</strong> controls how headwords that match case-insensitively are handled.
-          <code>-j true</code> merges them into one entry (lowercase headword kept, blank line between definitions) — recommended for Kaikki sources.
-          Entries whose definitions are also equal (case-insensitive) are considered exact duplicates and discarded.
-          <code>-j false</code> keeps entries with different casing separate (e.g. <em>pessoas</em> and <em>Pessoas</em>) — recommended for StarDict sources.
-          Only byte-identical duplicates (same headword exact case + same definition bytes) are discarded.
-          Set via config as <code>xdxf2pcdic.join=true</code>.<br>
+          <strong>--merge-defs / -m (required):</strong> controls how duplicate headwords are handled.
+          <code>ALWAYS</code> — headword match is case-insensitive; different definitions are merged (blank line between them), identical entries are dropped. Recommended for Kaikki sources.
+          <code>EXACT</code> — headword match is case-sensitive; different definitions for the exact same headword are merged, identical entries are dropped. Recommended for StarDict sources.
+          <code>NEVER</code> — never merge; only byte-identical duplicates are dropped.
+          Set via config as <code>xdxf2pbdic.merge-defs=EXACT</code>.<br>
           <strong>Output:</strong> the <code>.dic</code> file is written to <code>data/out/</code>.
         </div>
       </div>

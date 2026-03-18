@@ -31,12 +31,12 @@ chmod +x linux/stardict-2-tab linux/kaikki-2-tab linux/tab-2-xdxf linux/xdxf-2-p
 # StarDict → .dic (using xdxf-2-pbdic)
 linux/stardict-2-tab -i data/stardict/dict-pt-pt/dict-data.ifo -o data/out/dict-pt-pt.tsv
 linux/tab-2-xdxf    -i data/out/dict-pt-pt.tsv -o data/out/dict-pt-pt.xdxf -l pt -n "Dicionário PT-PT"
-linux/xdxf-2-pbdic  -i data/out/dict-pt-pt.xdxf -o data/out/dict-pt-pt.dic -l pt -D lang/pt -j false
+linux/xdxf-2-pbdic  -i data/out/dict-pt-pt.xdxf -o data/out/dict-pt-pt.dic -l pt -D lang/pt -m EXACT
 
 # Kaikki → .dic (using xdxf-2-pbdic)
 linux/kaikki-2-tab -i data/kaikki/pt-extract.jsonl -l pt -e SEPARATE -o data/out/kaikki-pt.tsv
 linux/tab-2-xdxf   -i data/out/kaikki-pt.tsv -o data/out/kaikki-pt.xdxf -l pt -n "Dicionário PT (Kaikki)"
-linux/xdxf-2-pbdic -i data/out/kaikki-pt.xdxf -o data/out/kaikki-pt.dic -l pt -D lang/pt -j true
+linux/xdxf-2-pbdic -i data/out/kaikki-pt.xdxf -o data/out/kaikki-pt.dic -l pt -D lang/pt -m ALWAYS
 
 # Kaikki → .xdxf piped (no intermediate .tsv)
 linux/chain-kaikki-2-xdxf confs/kiakki2xdxf-pten-pt.config
@@ -68,7 +68,7 @@ tab2xdxf.name=Wiktionary.org PT+EN->PT (Kaikki)
 xdxf2pcdic.in=data/out/kaikki-pten-pt.xdxf
 xdxf2pcdic.out=data/out/kaikki-pten-pt.dic
 xdxf2pcdic.lang=pt
-xdxf2pcdic.join=true
+xdxf2pbdic.merge-defs=ALWAYS
 ```
 
 Namespaces: `stardict-2-tab` → `stardict2tab.*` · `kaikki-2-tab` → `kaikki2tab.*` · `tab-2-xdxf` → `tab2xdxf.*` · `xdxf-2-pbdic` → `xdxf2pcdic.*`
