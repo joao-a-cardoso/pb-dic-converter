@@ -63,6 +63,8 @@ public class ConvKaikki2Tab {
 
     static final String TOOL = "kaikki-2-tab";
 
+    static final String UC_BULLET = "\u2022 ";
+
     static void err(String msg) { System.err.println(TOOL + ": " + msg); }
     static void errRaw(String msg) { System.err.println(msg); }
     
@@ -140,8 +142,8 @@ public class ConvKaikki2Tab {
 
         int count = 0, filtered = 0, skipped = 0, duplicates = 0;
         // Key = "word\tdef" — only drop entries where both headword AND content are identical
-        var seenEntries = new java.util.HashSet<String>();
-        var affectedWords = new java.util.HashSet<String>();
+        var seenEntries = new HashSet<String>();
+        var affectedWords = new HashSet<String>();
         InputStream rawStream = new FileInputStream(inFile.toFile());
         InputStream inStream  = isGzip ? new GZIPInputStream(rawStream) : rawStream;
         OutputStream outStream = toStdout ? System.out : new FileOutputStream(output);
@@ -153,16 +155,16 @@ public class ConvKaikki2Tab {
                 line = line.strip();
                 if (line.isEmpty()) continue;
                 try {
-                    var obj = (Map<String, Object>) new JsonParser(line).parseObject();
+                    Map<String, ?> entry = new JsonParser(line).parseObject();
 
                     // Filter by language
-                    if (!langFilter.contains(getStr(obj, "lang_code"))) { filtered++; continue; }
+                    if (!langFilter.contains(getStr(entry, "lang_code"))) { filtered++; continue; }
 
-                    String word = getStr(obj, "word");
+                    String word = getStr(entry, "word");
                     if (word == null || word.isBlank()) { skipped++; continue; }
 
                     // Main entry
-                    String def = buildDefinition(obj, emitEmbedded);
+                    String def = buildDefinition(word, entry, emitEmbedded);
                     if (def != null && !def.isBlank()) {
                         String sanitized = sanitize(def);
                         if (seenEntries.add(word + "\t" + sanitized)) {
@@ -178,50 +180,43 @@ public class ConvKaikki2Tab {
 
                     // Expressions as separate TSV entries
                     if (emitSeparate) {
-                    var expressions = (List<Object>) obj.getOrDefault("expressions", List.of());
-                    for (var e : expressions) {
-                        var expr = (Map<String, Object>) e;
-                        String exprWord = getStr(expr, "word");
-                        if (exprWord == null || exprWord.isBlank()) continue;
-                        // Skip expression entries whose headword has fewer than 2 characters
-                        // and contains no alphabetic character — these are punctuation/symbol
-                        // artefacts from Kaikki (e.g. ":" extracted from an English expression).
-                        if (exprWord.length() < 2 && !exprWord.codePoints().anyMatch(Character::isLetter)) continue;
-                        var exprSenses = (List<Object>) expr.getOrDefault("senses", List.of());
-                        if (exprSenses.isEmpty()) continue;
-                        var sb2 = new StringBuilder();
-                        sb2.append("<ol>");
-                        for (var s : exprSenses) {
-                            var sense = (Map<String, Object>) s;
-                            sb2.append("<li>");
-                            String domain = domain(sense);
-                            if (domain != null) sb2.append("<b>[").append(domain).append("]</b> ");
-                            var glosses = (List<Object>) sense.getOrDefault("glosses", List.of());
-                            if (!glosses.isEmpty()) {
-                                String g2 = stripWiki(glosses.get(0));
-                                while (g2.startsWith("\u2022 ")) g2 = g2.substring(2);
-                                sb2.append(escapeXml(g2));
+                        List<Map<String, ?>> expressions = getList(entry,"expressions",null);
+                        for (var expr : expressions) {
+                            String exprWord = getStr(expr, "word");
+                            if (exprWord == null || exprWord.isBlank()) continue;
+                            // Skip expression entries whose headword has fewer than 2 characters
+                            // and contains no alphabetic character — these are punctuation/symbol
+                            // artefacts from Kaikki (e.g. ":" extracted from an English expression).
+                            if (exprWord.length() < 2 && !exprWord.codePoints().anyMatch(Character::isLetter)) continue;
+                            List<?> exprSenses = getList(expr, "senses", null);
+                            if (exprSenses.isEmpty()) continue;
+                            var sb2 = new StringBuilder();
+                            sb2.append("<ol>");
+                            for (var s : exprSenses) {
+                                var sense = (Map<String, Object>) s;
+                                sb2.append("<li>");
+                                sb2.append(buildDomainText(sense));
+
+                                List<String> glosses = getList(sense, "glosses", null);
+                                if (!glosses.isEmpty()) {
+                                    String g2 = stripWiki(glosses.get(0));
+                                    while (g2.startsWith(UC_BULLET)) g2 = g2.substring(2);
+                                    sb2.append(escapeXml(g2));
+                                }
+
+                                sb2.append(buildExampleText(sense, exprWord));
+                                sb2.append("</li>");
                             }
-                            var examples = (List<Object>) sense.getOrDefault("examples", List.of());
-                            if (!examples.isEmpty()) {
-                                var ex = (Map<String, Object>) examples.get(0);
-                                String text = getStr(ex, "text");
-                                if (text != null)
-                                    sb2.append(" <i>" + translateTerm("example") + ": ")
-                                       .append(stripWiki(text)).append("</i>");
+                            sb2.append("</ol>");
+                            String exprSanitized = sanitize(sb2.toString());
+                            if (seenEntries.add(exprWord + "\t" + exprSanitized)) {
+                                writer.write(exprWord + "\t" + exprSanitized + "\n");
+                                count++;
+                            } else {
+                                duplicates++;
+                                affectedWords.add(exprWord);
                             }
-                            sb2.append("</li>");
                         }
-                        sb2.append("</ol>");
-                        String exprSanitized = sanitize(sb2.toString());
-                        if (seenEntries.add(exprWord + "\t" + exprSanitized)) {
-                            writer.write(exprWord + "\t" + exprSanitized + "\n");
-                            count++;
-                        } else {
-                            duplicates++;
-                            affectedWords.add(exprWord);
-                        }
-                    }
                     } // end if (emitSeparate)
 
                 } catch (Exception e) {
@@ -237,19 +232,19 @@ public class ConvKaikki2Tab {
     // --- Definition builder ---
 
     @SuppressWarnings("unchecked")
-    static String buildDefinition(Map<String, Object> obj, boolean emitEmbedded) {
-        var keepExpressionsWithEmptyContent = true;
-        var tags  = (List<Object>) obj.getOrDefault("tags", List.of());
-        var senses = (List<Object>) obj.getOrDefault("senses", List.of());
+    static String buildDefinition(String word, Map<String, ?> entry, boolean emitEmbedded) {
+        boolean keepExpressionsWithEmptyContent = true;
+        List<String> tags  = getList(entry, "tags", null);
+        List<Map<String, ?>> senses  = getList(entry, "senses", null);
 
         // Form-of entries: minimal one-line definition
         if (tags.contains("form-of") && !senses.isEmpty()) {
-            var sense = (Map<String, Object>) senses.get(0);
-            var glosses = (List<Object>) sense.getOrDefault("glosses", List.of());
+            Map<String, ?> sense = senses.get(0);
+            List<String> glosses = getList(sense, "glosses", null);
             if (!glosses.isEmpty()) {
                 String gloss = stripWiki(glosses.get(0));
-                while (gloss.startsWith("\u2022 ")) gloss = gloss.substring(2);
-                String posTitle = getStr(obj, "pos_title");
+                while (gloss.startsWith(UC_BULLET)) gloss = gloss.substring(2);
+                String posTitle = getStr(entry, "pos_title");
                 if (posTitle != null)
                     return "<p><i>" + escapeXml(posTitle) + "</i> — " + escapeXml(gloss) + "</p>";
                 return "<p>" + escapeXml(gloss) + "</p>";
@@ -262,25 +257,24 @@ public class ConvKaikki2Tab {
         var sb = new StringBuilder();
 
         // 1. Part of speech + gender
-        String posTitle = getStr(obj, "pos_title");
-        if (posTitle == null) posTitle = getStr(obj, "pos");
+        String posTitle = getStr(entry, "pos_title");
+        if (posTitle == null) posTitle = getStr(entry, "pos");
         String gender = tags.contains("masculine") ? "masculine"
                       : tags.contains("feminine")  ? "feminine"
                       : null;
 
         if (posTitle != null) {
-            sb.append("<p><b>").append(escapeXml(posTitle)).append("</b>");
+            sb.append("<p>"+formatTitle(posTitle, true));
             if (gender != null) sb.append(" (").append(translateTerm(gender)).append(")");
             sb.append("</p>");
         }
 
         // 2. Plural forms (nouns only)
-        if (!"verb".equals(getStr(obj, "pos"))) {
-            var forms = (List<Object>) obj.getOrDefault("forms", List.of());
+        if (!"verb".equals(getStr(entry, "pos"))) {
+            List<Map<String,?>> forms = getList(entry, "forms", null);
             var plurals = new ArrayList<String>();
-            for (var f : forms) {
-                var fm = (Map<String, Object>) f;
-                var ftags = (List<Object>) fm.getOrDefault("tags", List.of());
+            for (var fm : forms) {
+                List<?> ftags = getList(fm, "tags", null);
                 if (ftags.contains("plural")) {
                     String form = getStr(fm, "form");
                     if (form != null) plurals.add(form);
@@ -294,12 +288,12 @@ public class ConvKaikki2Tab {
 
         // 3. Pronunciation
         @SuppressWarnings("unchecked")
-        LinkedHashMap<String, List<String>> mapSounds = buildSoundsMap(obj);        
+        Map<String, List<String>> mapSounds = buildSoundsMap(entry);        
         if(!mapSounds.isEmpty()) {
             var ipas = new ArrayList<String>();
             boolean renderTag = mapSounds.size() > 1;
-            for(var entry : mapSounds.entrySet()) {
-              ipas.add(entry.getValue().get(0) + (renderTag ? "<i>("+entry.getKey()+")</i>":""));
+            for(var snd : mapSounds.entrySet()) {
+              ipas.add(snd.getValue().get(0) + (renderTag ? "<i><small>("+snd.getKey()+")</small></i>":""));
             }
         
             if (!ipas.isEmpty()) {
@@ -313,76 +307,63 @@ public class ConvKaikki2Tab {
         for (var s : senses) {
             var sense = (Map<String, Object>) s;
             sb.append("<li>");
-
-            // Domain: raw_tags first, fall back to topics
-            String domain = domain(sense);
-            if (domain != null) sb.append("<i>[").append(domain).append("]</i> ");
+            sb.append(buildDomainText(sense));
 
             // Glosses
-            var glosses = (List<Object>) sense.getOrDefault("glosses", List.of());
+            List<String> glosses = getList(sense, "glosses", null);
             if (!glosses.isEmpty()) {
                 String gloss = stripWiki(glosses.get(0));
-                while (gloss.startsWith("\u2022 ")) gloss = gloss.substring(2);
+                while (gloss.startsWith(UC_BULLET)) gloss = gloss.substring(2);
                 sb.append(escapeXml(gloss));
             }
 
             // Example
-            var examples = (List<Object>) sense.getOrDefault("examples", List.of());
-            if (!examples.isEmpty()) {
-                var ex = (Map<String, Object>) examples.get(0);
-                String text = getStr(ex, "text");
-                if (text != null)
-                    sb.append(" <i>" + translateTerm("example") + ": ")
-                      .append(stripWiki(text)).append("</i>");
-            }
-
+            sb.append(buildExampleText(sense, word));
             sb.append("</li>");
         }
         sb.append("</ol>");
 
         // 5. Etymology
-        var etymTexts = (List<Object>) obj.getOrDefault("etymology_texts", List.of());
+        List<String> etymTexts = getList(entry, "etymology_texts", null);
         if (!etymTexts.isEmpty()) {
-            String etym = etymTexts.get(0).toString().strip();
+            String etym = etymTexts.get(0).strip();
             if (etym.startsWith(":")) etym = etym.substring(1).strip();
             sb.append("<p><i>" + translateTermCap("ethymology") + ": </i> ").append(escapeXml(etym)).append("</p>");
         }
 
         // 6. Expressions
         if (emitEmbedded) {
-        var expressions = (List<Object>) obj.getOrDefault("expressions", List.of());
-        if (!expressions.isEmpty()) {
-            sb.append("<p><b>" + translateTermCap("expressions") + ": </b></p><ul>");
-            for (var e : expressions) {
-                var expr = (Map<String, Object>) e;
-                String exprWord = getStr(expr, "word");
-                if (exprWord == null || exprWord.isBlank()) continue;
-                var exprSenses = (List<Object>) expr.getOrDefault("senses", List.of());
-                
-                if (exprSenses.isEmpty() && !keepExpressionsWithEmptyContent) continue;
-  
-                var sbContent = new StringBuilder();
-                if(!exprSenses.isEmpty()) {
-                    var exprSense = (Map<String, Object>) exprSenses.get(0);
-                    String domain = domain(exprSense);
-                    if (domain != null) {
-                        sbContent.append("<i>[").append(domain).append("]</i>");
-                    }
-                    var exprGlosses = (List<Object>) exprSense.getOrDefault("glosses", List.of());
-                    if(!exprGlosses.isEmpty()) {
-                        // just the firsy gloss, should be enough
-                        sbContent.append(stripWiki(exprGlosses.get(0)));
-                    }
-                }
+            List<Map<String,?>> expressions = getList(entry, "expressions", null);
+            if (!expressions.isEmpty()) {
+                sb.append("<p>"+formatTitle(translateTermCap("expressions"), false)+"</p><ul>");
+                for (var expr : expressions) {
+                    String exprWord = getStr(expr, "word");
+                    if (exprWord == null || exprWord.isBlank()) continue;
+                    List<Map<String, ?>> exprSenses = getList(expr, "senses", null);
+                    
+                    if (exprSenses.isEmpty() && !keepExpressionsWithEmptyContent) continue;
+    
+                    var sbContent = new StringBuilder();
+                    if(!exprSenses.isEmpty()) {
+                        Map<String, ?> exprSense = exprSenses.get(0);
 
-                sb.append("<li><b>").append(escapeXml(exprWord)).append("</b>");
-                if(sbContent.length() > 0) {
-                    sb.append(" - ").append(sbContent);
+                        sbContent.append(buildDomainText(exprSense));
+
+                        List<String> exprGlosses = getList(exprSense, "glosses", null);
+                        if(!exprGlosses.isEmpty()) {
+                            // just the firsy gloss, should be enough
+                            sbContent.append(stripWiki(exprGlosses.get(0)));
+                        }
+                    }
+
+                    sb.append("<li><b>").append(escapeXml(exprWord)).append("</b>");
+                    if(sbContent.length() > 0) {
+                        sb.append(" - ").append(sbContent);
+                    }
+                    sb.append("</li>");
                 }
-                sb.append("</li>");
+                sb.append("</ul>");
             }
-            sb.append("</ul>");
-        }
         } // end if (emitEmbedded)
 
         return sb.toString();
@@ -390,11 +371,48 @@ public class ConvKaikki2Tab {
 
     // --- Helpers ---
     
+    static String formatTitle(String title, boolean large) {
+        if(large) {
+            title = "<large>" + title +"</large>";
+        }
+        title = escapeXml(title);
+        title = "<b>" + title + ": </b>";
+        return title;
+    }
+
+    /** Build text representing examples for a sense */
+    static String buildExampleText(Map<String, ?> sense, String refWord) {
+        List<Map<String,?>> examples =  getList(sense, "examples", null);
+        if (examples.isEmpty()) {
+            return "";
+        }
+
+        var sb = new StringBuilder();
+        // just the first example
+        Map<String, ?> ex = examples.get(0);
+        String text = getStr(ex, "ref");
+        if(text == null || text.isBlank()) {
+            text = getStr(ex, "text");
+        }
+        if (text != null && !text.isBlank()) {
+            String quote = stripWiki(text).replace("\n","//");
+            if(refWord != null && !refWord.isBlank()) {
+                quote = quote.replace(refWord, "<b>"+refWord+"</b>");
+            }
+            quote = "<i>\""+quote+"\"</i>";
+            sb.append(" <small>(" + translateTerm("example") + ": ")
+                .append(quote)
+                .append(")</small>");
+        }
+
+        return escapeXml(sb.toString());
+    }
+
     /** Build a sounds map */
     @SuppressWarnings("unchecked")
-    static LinkedHashMap<String, List<String>> buildSoundsMap(Map<String, Object> sense) {
+    static Map<String, List<String>> buildSoundsMap(Map<String, ?> sense) {
         var soundtagsToIgnore = Set.of("","X-SAMPA","SAMPA","IPA");
-        var sounds = (List<Object>) sense.getOrDefault("sounds", List.of());
+        List<?> sounds = getList(sense, "sounds", null);
 
         var ipas = new ArrayList<String>();
 
@@ -407,7 +425,7 @@ public class ConvKaikki2Tab {
             String ipa = getStr(sound, "ipa");
             if (ipa != null && !ipa.isBlank()) {
                 // Use only the first tag for the sound
-                var stags = (List<String>)sound.getOrDefault("tags", List.of());
+                List<String> stags = getList(sound, "tags", null);
                 String stag = stags.isEmpty()? "" : (stags.get(0).trim());
                 
                 if(!stag.contains("?")) {
@@ -425,27 +443,26 @@ public class ConvKaikki2Tab {
         return mapSounds;
     }
 
-    /** Returns domain label from raw_tags, falling back to topics. */
+    /** Returns domain label from topics, falling back to rawtags. */
     @SuppressWarnings("unchecked")
-    static String domain(Map<String, Object> sense) {
+    static String buildDomainText(Map<String, ?> sense) {
         String domains;
-        var rawTags = (List<Object>) sense.getOrDefault("raw_tags", List.of());
-        var topics = (List<Object>) sense.getOrDefault("topics", List.of());
-
-        if (!rawTags.isEmpty()) {
-            domains = rawTags.stream().map(el -> el.toString()).collect(Collectors.joining(","));
-        }
-        else if (!topics.isEmpty()) {
-            domains = topics.stream().map(el -> el.toString()).collect(Collectors.joining(","));
+        List<String> rawTags = getList(sense, "raw_tags", null);
+        List<String> topics =  getList(sense, "topics", null);
+        
+        if (!topics.isEmpty()) {
+            domains = topics.stream().map(el -> el.strip()).collect(Collectors.joining(","));
+        } else if (!rawTags.isEmpty()) {
+            domains = rawTags.stream().map(el -> el.strip()).collect(Collectors.joining(","));
         }
         else {
-            return null;
+            return "";
         }
         
         String result = Arrays.stream(domains.split("[;,]")).distinct()
                               .map(el -> translateTermCap(el))
                               .collect(Collectors.joining(", "));
-        return result;
+        return " <i>[" + result + "]</i> ";
     }
     
     /** Returns translated term, falling back to received one. Not escaped for xml.*/
@@ -484,26 +501,42 @@ public class ConvKaikki2Tab {
     }
 
     /** Strips wiki markup: [[target|display]] → display, [[target]] → target. */
-    static String stripWiki(Object obj) {
-        if(obj == null) return "";
+    static String stripWiki(String wiki) {
+        if(wiki == null) return "";
 
-        String string = obj.toString().stripLeading();
+        String string = wiki.toString().stripLeading();
         string = string.replaceAll("\\[\\[(?:[^|\\]]*\\|)?([^\\]]+)\\]\\]", "$1");
         string = string.replace("[[", "").replace("]]", "");
         return escapeXml(string);
     }
 
-    static String getStr(Map<String, Object> map, String key) {
-        Object obj = map.get(key);
-        if(obj instanceof Collection<?>) {
-           obj = ((Collection<?>)obj).isEmpty()? null: ((Collection<?>)obj).iterator().next();
+    @SuppressWarnings("unchecked")
+    static String getStr(Map<String, ?> map, String key) {
+        Object entry = map.get(key);
+        if(entry instanceof List<?>) {
+           entry = ((List<?>)entry).isEmpty()? null: ((List<?>)entry).get(0).toString();
         }
-        return obj instanceof String s ? s : null;
+        return entry instanceof String s ? s : null;
     }
 
-    static String escapeXml(String s) {
-        if(s == null) return "";
-        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    @SuppressWarnings("unchecked")
+    static <T> List<T> getList(Map<String,?> map, String key, T defltValue) {
+        Object entry = map.get(key);
+
+        if(entry == null) {
+            return defltValue==null? List.of() : List.of(defltValue);
+        } else if(entry instanceof List){
+            return (List<T>) entry;
+        } else {
+            return List.of((T)entry);
+        }
+    }
+
+    static String escapeXml(String string) {
+        if(string == null) return null;
+        return string.replace("&", "&amp;")
+                     .replace("<", "&lt;")
+                     .replace(">", "&gt;");
     }
 
     // --- Argument parser ---
@@ -516,7 +549,7 @@ public class ConvKaikki2Tab {
                 case "--in",              "-i" -> map.put("in",              args[++i]);
                 case "--out",             "-o" -> map.put("out",             args[++i]);
                 case "--lang",            "-l" -> map.put("lang",            args[++i]);
-                case "--embedded-defs",  "-e" -> map.put("embedded-defs",  args[++i]);
+                case "--embedded-defs" ,  "-e" -> map.put("embedded-defs",   args[++i]);
                 default -> err(String.format("Warning: unknown argument '%s', ignoring.", args[i]));
             }
         }
