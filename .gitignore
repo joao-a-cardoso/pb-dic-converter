@@ -1,3 +1,9 @@
 data/out/**/*
 windows/**/*
 !**/README.*
+
+# Eclipse IDE stuff
+/bin/**
+.classpath
+.project
+/bin/
