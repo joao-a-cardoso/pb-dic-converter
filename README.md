@@ -107,7 +107,7 @@ See `pocketbook-dict-guide.html` for full documentation.
 
 The tool logic lives in `java/` as standard `.java` source files (one class per tool).
 The `linux/` scripts are thin wrappers that delegate to `runjava`, which locates the
-`java/` directory relative to itself and invokes `java --source 17 <ClassName>.java`.
+`java/` directory relative to itself and invokes `java --source 25 <ClassName>.java`.
 No compilation step is needed.
 
 ---

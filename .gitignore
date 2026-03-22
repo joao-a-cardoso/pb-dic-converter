@@ -3,7 +3,8 @@ windows/**/*
 !**/README.*
 
 # Eclipse IDE stuff
-/bin/**
+/bin/**/*
+/.settings/**/*
 .classpath
 .project
 /bin/

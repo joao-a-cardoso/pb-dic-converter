@@ -430,7 +430,7 @@
     <div class="header-meta">
       <span class="badge">StarDict / Kaikki → TSV → XDXF → .dic</span>
       <span class="badge outline">Linux · macOS · Windows</span>
-      <span class="badge outline">Java 17+</span>
+      <span class="badge outline">Java 25+</span>
     </div>
   </header>
 
@@ -527,7 +527,7 @@
   <!-- ===================== REQUIREMENTS ===================== -->
   <div class="section-label">Requirements</div>
   <div class="requirements">
-    <div class="req-item"><span class="dot"></span>Java 17+ JDK</div>
+    <div class="req-item"><span class="dot"></span>Java 25+ JDK</div>
     <div class="req-item"><span class="dot"></span><a href="https://www.reader-dict.com/pt/download/pt" target="_blank">StarDict dictionary (reader-dict.com)</a> — or —</div>
     <div class="req-item"><span class="dot"></span><a href="https://kaikki.org/dictionary/downloads/pt/pt-extract.jsonl" target="_blank">Kaikki JSONL (kaikki.org)</a></div>
     <div class="req-item"><span class="dot"></span><a href="https://github.com/Markismus/LanguageFilesPocketbookConverter" target="_blank">LanguageFilesPocketbookConverter</a> by <a href="https://github.com/Markismus" target="_blank">Markismus</a> — collation, keyboard &amp; morphem files</div>
@@ -625,7 +625,7 @@
       <div class="step-number">3</div>
       <div class="step-content">
         <div class="step-title">Set up folder structure</div>
-        <p class="step-desc">The tool logic lives in <code>java/</code> as standard <code>.java</code> source files. The <code>linux/</code> scripts are thin wrappers that delegate to <code>runjava</code>, which locates <code>java/</code> relative to itself and invokes <code>java --source 17</code>. No compilation step is needed. Source data goes in <code>data/</code>, language files in <code>lang/</code>, and generated files land in <code>data/out/</code>.</p>
+        <p class="step-desc">The tool logic lives in <code>java/</code> as standard <code>.java</code> source files. The <code>linux/</code> scripts are thin wrappers that delegate to <code>runjava</code>, which locates <code>java/</code> relative to itself and invokes <code>java --source 25</code>. No compilation step is needed. Source data goes in <code>data/</code>, language files in <code>lang/</code>, and generated files land in <code>data/out/</code>.</p>
         <pre><span class="comment"># Expected folder structure</span>
 linux/
   stardict-2-tab        <span class="comment"># wrapper → ConvStardict2Tab.java</span>
@@ -633,7 +633,7 @@ linux/
   tab-2-xdxf            <span class="comment"># wrapper → ConvTab2Xdxf.java</span>
   xdxf-2-pbdic          <span class="comment"># wrapper → ConvXdxf2Pbdic.java</span>
   check-pbdic           <span class="comment"># wrapper → CheckPbdic.java</span>
-  runjava               <span class="comment"># launcher: resolves java/ and runs java --source 17</span>
+  runjava               <span class="comment"># launcher: resolves java/ and runs java --source 25</span>
 java/
   ConvStardict2Tab.java <span class="comment"># StarDict → TSV</span>
   ConvKaikki2Tab.java   <span class="comment"># Kaikki JSONL → TSV</span>

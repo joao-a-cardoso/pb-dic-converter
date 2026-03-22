@@ -32,7 +32,7 @@ import org.xml.sax.helpers.DefaultHandler;
  *   -D / --langdir Language files directory (default: windows/<lang>/)
  *   -c / --config  .properties config file (namespace: checkpbdic.*)
  */
-class CheckPbdic {
+public class CheckPbdic {
 
     // ── SDIC bytecodes ────────────────────────────────────────────────────────
     static final byte FMT_END     = 0x01;

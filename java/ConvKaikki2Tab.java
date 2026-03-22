@@ -2,6 +2,8 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
+import java.util.Map.Entry;
+import java.util.regex.Pattern;
 import java.util.stream.*;
 import java.util.zip.GZIPInputStream;
 
@@ -81,7 +83,7 @@ public class ConvKaikki2Tab {
 
 	static final String TOOL = "kaikki-2-tab";
 
-	static final String UC_BULLET = "\u2022 ";
+	static final char UC_BULLET = '\u2022';
 
 	static void err(String msg) {
 		System.err.println(TOOL + ": " + msg);
@@ -184,7 +186,7 @@ public class ConvKaikki2Tab {
 			String line;
 			while ((line = reader.readLine()) != null) {
 				line = line.strip();
-				if (line.isEmpty())
+				if (strIsEmpty(line))
 					continue;
 				try {
 					Map<String, ?> entry = new JsonParser(line).parseObject();
@@ -196,14 +198,14 @@ public class ConvKaikki2Tab {
 					}
 
 					String word = getStr(entry, "word");
-					if (checkEmpty(word)) {
+					if (strIsEmpty(word)) {
 						skipped++;
 						continue;
 					}
 
 					// Main entry
 					String def = buildDefinition(word, entry, emitEmbedded);
-					if (!checkEmpty(def)) {
+					if (!strIsEmpty(def)) {
 						String lin = word + "\t" + sanitize(def);
 						seenWords.add(word);
 						if (seenEntries.add(lin)) { // did not exist in the set
@@ -261,20 +263,18 @@ public class ConvKaikki2Tab {
 
 	@SuppressWarnings("unchecked")
 	static String buildDefinition(String word, Map<String, ?> entry, boolean emitEmbedded) {
+
 		boolean keepExpressionsWithEmptyContent = true;
+
 		List<String> tags = getList(entry, "tags", null);
 		List<Map<String, ?>> senses = getList(entry, "senses", null);
 
 		// Form-of entries: minimal one-line definition (or not)
-		if (tags.contains("form-of") && !senses.isEmpty()) {
+		if (tags.contains("form-of") && !listIsEmpty(senses)) {
 			boolean shortFormOf = false;
 			Map<String, ?> sense = senses.get(0); // TODO consider displyaing more
-			List<String> glosses = getList(sense, "glosses", null);
-			if (!glosses.isEmpty()) {
-				String gloss = stripWiki(glosses.get(0)); // TODO consider displyaing more
-				while (gloss.startsWith(UC_BULLET)) {
-					gloss = gloss.substring(2);
-				}
+			String gloss = extractGloss(sense);
+			if (strIsEmpty(gloss)) {
 				String posTitle = getStr(entry, "pos_title");
 				gloss = escapeXml(gloss);
 				if (posTitle != null) {
@@ -288,18 +288,18 @@ public class ConvKaikki2Tab {
 					return "<p>" + gloss + "</p>";
 				}
 			}
-			return null;
 		}
 
-		if (senses.isEmpty())
+		if (listIsEmpty(senses))
 			return null;
 
 		var sbDef = new StringBuilder();
 
 		// 1. Part of speech + gender
 		String posTitle = getStr(entry, "pos_title");
-		if (posTitle == null)
+		if (posTitle == null) {
 			posTitle = getStr(entry, "pos");
+		}
 		String gender = tags.contains("masculine") ? "masculine" : tags.contains("feminine") ? "feminine" : null;
 
 		if (posTitle != null) {
@@ -350,11 +350,8 @@ public class ConvKaikki2Tab {
 			sbDef.append(buildDomainText(sense));
 
 			// Glosses
-			List<String> glosses = getList(sense, "glosses", null);
-			if (!glosses.isEmpty()) {
-				String gloss = stripWiki(glosses.get(0));
-				while (gloss.startsWith(UC_BULLET))
-					gloss = gloss.substring(2);
+			String gloss = extractGloss(sense);
+			if (!strIsEmpty(gloss)) {
 				sbDef.append(escapeXml(gloss));
 			}
 
@@ -373,38 +370,14 @@ public class ConvKaikki2Tab {
 			sbDef.append("<p><i>" + translateTermCap("ethymology") + ": </i> ").append(escapeXml(etym)).append("</p>");
 		}
 
-		// 6. Expressions
+		// 6. Expressions (embedded)
 		if (emitEmbedded) {
-			List<Map<String, ?>> expressions = getList(entry, "expressions", null);
-			if (!expressions.isEmpty()) {
-				sbDef.append("<p>" + formatTitle(translateTermCap("expressions"), false) + "</p><ul>");
-				for (var expr : expressions) {
-					String exprWord = getStr(expr, "word");
-					if (checkEmpty(exprWord))
-						continue;
-					List<Map<String, ?>> exprSenses = getList(expr, "senses", null);
-
-					if (exprSenses.isEmpty() && !keepExpressionsWithEmptyContent)
-						continue;
-
-					var sbEmbed = new StringBuilder();
-					if (!exprSenses.isEmpty()) {
-						Map<String, ?> exprSense = exprSenses.get(0);
-
-						sbEmbed.append(buildDomainText(exprSense));
-
-						List<String> exprGlosses = getList(exprSense, "glosses", null);
-						if (!exprGlosses.isEmpty()) {
-							// just the firsy gloss, should be enough
-							sbEmbed.append(stripWiki(exprGlosses.get(0)));
-						}
-					}
-
-					sbDef.append("<li><b>").append(escapeXml(exprWord)).append("</b>");
-					if (sbEmbed.length() > 0) {
-						sbDef.append(" - ").append(sbEmbed);
-					}
-					sbDef.append("</li>");
+			List<String> exprTexts = buildEmbeddedExpressionsText(entry, keepExpressionsWithEmptyContent);
+			if (!listIsEmpty(exprTexts)) {
+				sbDef.append("<p>" + formatTitle(translateTermCap("expressions"), false) + "</p>")//
+						.append("<ul>");
+				for (String et : exprTexts) {
+					sbDef.append("<li>").append(et).append("</li>");
 				}
 				sbDef.append("</ul>");
 			}
@@ -415,25 +388,66 @@ public class ConvKaikki2Tab {
 
 	// --- Helpers ---
 
+	/** Prepare a list with expressions to be embedded in a definition */
+	private static List<String> buildEmbeddedExpressionsText(Map<String, ?> entry,
+			boolean keepExpressionsWithEmptyContent) {
+
+		var exprTexts = new ArrayList<String>();
+
+		List<Map<String, ?>> expressions = getList(entry, "expressions", null);
+		if (!expressions.isEmpty()) {
+			for (var expr : expressions) {
+				var sb = new StringBuilder();
+				String exprWord = getStr(expr, "word");
+				if (strIsEmpty(exprWord))
+					continue;
+
+				List<Map<String, ?>> exprSenses = getList(expr, "senses", null);
+
+				if (listIsEmpty(exprSenses) && !keepExpressionsWithEmptyContent)
+					continue;
+
+				sb.append("<i>\"").append(escapeXml(exprWord)).append("\"</i>");
+				if (!listIsEmpty(exprSenses)) {
+					var sbEmbed = new StringBuilder();
+					Map<String, ?> exprSense = exprSenses.get(0); // just the first sense
+					sbEmbed.append(buildDomainText(exprSense));
+
+					String exprGloss = extractGloss(exprSense);
+					if (!strIsEmpty(exprGloss)) {
+						sbEmbed.append(stripWiki(exprGloss));
+					}
+					if (sbEmbed.length() > 0) {
+						sb.append(" - ").append(sbEmbed);
+					}
+				}
+				exprTexts.add(sb.toString());
+			}
+		}
+
+		return exprTexts;
+	}
+
+	/** Prepare a map with expressions to emit, related to a given ref. word */
 	static Map<String, CharSequence> prepareExpressionsToEmit(Map<String, ?> entry, String refWord) {
 		Map<String, CharSequence> mapResult = new LinkedHashMap<>();
 		List<Map<String, ?>> expressions = getList(entry, "expressions", null);
 		for (var expr : expressions) {
 			String exprWord = getStr(expr, "word");
-			if (checkEmpty(exprWord))
+			if (strIsEmpty(exprWord))
 				continue;
 			// Skip expression entries whose headword has fewer than 2 characters
 			// and contains no alphabetic character — these are punctuation/symbol
-			// artefacts from Kaikki (e.g. ":" extracted from an English expression).
+			// artifacts from Kaikki (e.g. ":" extracted from an English expression).
 			if (exprWord.length() < 2 && !exprWord.codePoints().anyMatch(Character::isLetter))
 				continue;
 			List<Map<String, ?>> exprSenses = getList(expr, "senses", null);
-			if (exprSenses.isEmpty())
+			if (listIsEmpty(exprSenses))
 				continue;
 
 			var sb = new StringBuilder();
 			sb.append("<p>").append(formatTitle(translateTermCap("expression"), true));
-			if (!checkEmpty(refWord)) {
+			if (!strIsEmpty(refWord)) {
 				sb.append(" (").append(refWord).append(")");
 			}
 			sb.append("</p>");
@@ -442,12 +456,9 @@ public class ConvKaikki2Tab {
 				sb.append("<li>");
 				sb.append(buildDomainText(sense));
 
-				List<String> glosses = getList(sense, "glosses", null);
-				if (!glosses.isEmpty()) {
-					String g2 = stripWiki(glosses.get(0)); // only the first one
-					while (g2.startsWith(UC_BULLET))
-						g2 = g2.substring(2);
-					sb.append(escapeXml(g2));
+				String gloss = extractGloss(sense);
+				if (!strIsEmpty(gloss)) {
+					sb.append(escapeXml(gloss));
 				}
 
 				sb.append(buildExampleText(sense, exprWord));
@@ -459,6 +470,32 @@ public class ConvKaikki2Tab {
 		return mapResult;
 	}
 
+	/** Extract the first gloss from the given sense */
+	private static String extractGloss(Map<String, ?> sense) {
+
+		if (sense == null)
+			return null;
+		List<String> glosses = getList(sense, "glosses", null);
+
+		if (!listIsEmpty(glosses)) {
+			// skip glosses that has fewer than 2 characters and contains no alphabetic
+			// character
+			// and use the first suitable gloss
+			String composeGloss = glosses.stream()
+					.filter(gl -> gl.length() >= 2 && gl.codePoints().anyMatch(Character::isLetter))
+					.collect(Collectors.joining(" "));
+
+			if (!strIsEmpty(composeGloss)) {
+				composeGloss = stripWiki(composeGloss);
+				composeGloss = stripChar(composeGloss, UC_BULLET, '/', '=');
+			}
+
+			return composeGloss;
+		} else {
+			return null;
+		}
+	}
+
 	static String formatTitle(String title, boolean large) {
 		if (large) {
 			title = "<large>" + title + "</large>";
@@ -468,33 +505,72 @@ public class ConvKaikki2Tab {
 		return title;
 	}
 
-	/** Build text representing examples for a sense */
+	/** Build text representing examples for the given sense */
 	static String buildExampleText(Map<String, ?> sense, String refWord) {
-		List<Map<String, ?>> examples = getList(sense, "examples", null);
-		if (examples.isEmpty()) {
+
+		if (strIsEmpty(refWord)) {
 			return "";
 		}
 
-		var sb = new StringBuilder();
-		// just the first example
-		Map<String, ?> ex = examples.get(0);
-		String text = getStr(ex, "ref");
-		if (checkEmpty(text)) {
-			text = getStr(ex, "text");
-		}
-		if (!checkEmpty(text)) {
-			String quote = stripWiki(text).replace("\n", "//");
-			if (!checkEmpty(refWord)) {
-				quote = quote.replace(refWord, "<b>" + refWord + "</b>");
-			}
-			quote = "<i>\"" + quote + "\"</i>";
-			sb.append(" <small>(" + translateTerm("example") + ": ").append(quote).append(")</small>");
+		List<Map<String, ?>> examples = getList(sense, "examples", null);
+		if (listIsEmpty(examples)) {
+			return "";
 		}
 
+		// Selected quotes must contain the reference word exactly (case-insentive) or
+		// as part of word use look behind (must be preceeded by non-alphanum or begin
+		// line)
+		Pattern pattRefword = Pattern.compile("(?:(?<=[^\\p{Alnum}])|^)" + refWord,
+				Pattern.CASE_INSENSITIVE | Pattern.MULTILINE | Pattern.UNICODE_CASE);
+
+		var candidateQuotes = new LinkedHashMap<String, List<List<Number>>>();
+		for (var ex : examples) {
+			String text = getStr(ex, "text");
+			List<List<Number>> boldOffsets = getList(ex, "bold_text_offsets", null);
+			candidateQuotes.put(text, boldOffsets);
+		}
+
+		// Uses candidates that do match the pattern or defined offsets (filtering
+		// errors in date)
+		Entry<String, List<List<Number>>> quote = candidateQuotes.entrySet().stream()//
+				.filter(en -> !strIsEmpty(en.getKey()))//
+				.filter(en -> pattRefword.matcher(en.getKey()).find() || !en.getValue().isEmpty()) //
+				.findFirst().orElse(null);
+
+		if (quote == null)
+			return "";
+
+		String quoteText = quote.getKey();
+
+		// the quotation defines offsets for bold, filter out invalid ones
+		List<List<Number>> boldOffsets = quote.getValue().stream() //
+				.filter(of -> of.size() == 2)//
+				.filter(of -> of.get(0).intValue() < of.get(1).intValue()) //
+				.filter(of -> of.get(1).intValue() < quote.getKey().length()) //
+				.toList();
+
+		if (boldOffsets.isEmpty() || refWord.length() <= 1) {
+			quoteText = pattRefword.matcher(quoteText).replaceAll(fw -> "<b>" + fw.group() + "</b>");
+		} else {
+			var wrk = new StringBuilder(quoteText);
+			for (int i = boldOffsets.size() - 1; i >= 0; --i) {
+				// insert must me made from end to start to keep simple to manage indexes
+				List<Number> pair = boldOffsets.get(i);
+				if (pair.size() >= 2) {
+					int beg = pair.get(0).intValue(), end = pair.get(1).intValue();
+					wrk.insert(end, "</b>").insert(beg, "<b>");
+				}
+			}
+			quoteText = stripWiki(wrk.toString().replace("\n", " / "));
+		}
+
+		var sb = new StringBuilder();
+		quoteText = "<i>\"" + quoteText + "\"</i>";
+		sb.append(" <small>(" + translateTerm("example") + ": ").append(quoteText).append(")</small>");
 		return escapeXml(sb.toString());
 	}
 
-	/** Build a sounds map */
+	/** Build a sounds (pronunciation) map for the given sense */
 	@SuppressWarnings("unchecked")
 	static Map<String, List<String>> buildSoundsMap(Map<String, ?> sense) {
 		var soundtagsToIgnore = Set.of("", "X-SAMPA", "SAMPA", "IPA");
@@ -505,11 +581,9 @@ public class ConvKaikki2Tab {
 		// build a map of lists sounds by tag
 		var mapSounds = new LinkedHashMap<String, List<String>>();
 		for (var s : sounds) {
-			@SuppressWarnings("unchecked")
 			var sound = (Map<String, Object>) s;
-			@SuppressWarnings("unchecked")
 			String ipa = getStr(sound, "ipa");
-			if (!checkEmpty(ipa)) {
+			if (!strIsEmpty(ipa)) {
 				// Use only the first tag for the sound
 				List<String> stags = getList(sound, "tags", null);
 				String stag = stags.isEmpty() ? "" : (stags.get(0).trim());
@@ -540,12 +614,12 @@ public class ConvKaikki2Tab {
 
 		Stream<String> stream = !topics.isEmpty() ? topics.stream() : rawTags.stream();
 
-		stream.filter(el -> !checkEmpty(el)) //
+		stream.filter(el -> !strIsEmpty(el)) //
 				.distinct() //
 				.map(str -> str.split("[;,]"))//
 				.forEach(arr -> domains.addAll(List.of(arr)));
 
-		return domains.stream().filter(el -> !checkEmpty(el)).distinct().toList();
+		return domains.stream().filter(el -> !strIsEmpty(el)).distinct().toList();
 	}
 
 	/** Returns domain label from topics, falling back to rawtags. */
@@ -568,7 +642,7 @@ public class ConvKaikki2Tab {
 	static String translateRaw(Object term) {
 		String strTerm = term == null ? null : term.toString().trim();
 
-		if (checkEmpty(strTerm))
+		if (strIsEmpty(strTerm))
 			return "";
 
 		String result = null;
@@ -618,7 +692,6 @@ public class ConvKaikki2Tab {
 		return escapeXml(string);
 	}
 
-	@SuppressWarnings("unchecked")
 	static String getStr(Map<String, ?> map, String key) {
 		Object entry = map.get(key);
 		if (entry instanceof List<?>) {
@@ -640,14 +713,31 @@ public class ConvKaikki2Tab {
 		}
 	}
 
-	static String escapeXml(String string) {
-		if (string == null)
-			return null;
-		return string.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+	static String escapeXml(String text) {
+		if (strIsEmpty(text))
+			return "";
+
+		return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
 	}
 
-	static boolean checkEmpty(String text) {
+	static String stripChar(String text, char... characters) {
+		if (text == null)
+			return null;
+
+		for (String orig = text; !orig.equals(text);) {
+			for (char ch : characters) {
+				text = text.charAt(0) == ch ? text.substring(1).stripLeading() : text;
+			}
+		}
+		return text;
+	}
+
+	static boolean strIsEmpty(String text) {
 		return text == null || text.isBlank();
+	}
+
+	static boolean listIsEmpty(Collection<?> coll) {
+		return coll == null || coll.isEmpty();
 	}
 
 	// --- Argument parser ---
