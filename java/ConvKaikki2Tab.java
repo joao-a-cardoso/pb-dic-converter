@@ -638,10 +638,8 @@ public class ConvKaikki2Tab {
 	/** Build a sounds (pronunciation) map for the given sense */
 	@SuppressWarnings("unchecked")
 	static Map<String, List<String>> buildSoundsMap(Map<String, ?> sense) {
-		var soundtagsToIgnore = Set.of("", "X-SAMPA", "SAMPA", "IPA");
+		var soundtagsToIgnore = Set.of("", "X-SAMPA", "SAMPA"); // Removed "IPA"
 		List<?> sounds = getList(sense, "sounds", null);
-
-		var ipas = new ArrayList<String>();
 
 		// build a map of lists sounds by tag
 		var mapSounds = new LinkedHashMap<String, List<String>>();

@@ -54,7 +54,7 @@ import javax.xml.parsers.SAXParser;
  *   tab2xdxf.out=-
  *   tab2xdxf.lang=pt
  *   tab2xdxf.name=Dicionário PT (Kaikki)
- *   tab2xdxf.novalidate=true
+ *   tab2xdxf.no-validate=true
  * </pre>
  *
  * <br>
@@ -73,7 +73,8 @@ import javax.xml.parsers.SAXParser;
  *           sub, sup, br, a, div, span, table, tr, td, th}</li>
  * <li>Self-closes void elements: {@code <br/>
  * }, {@code 
- * <hr/>
+ * 
+<hr/>
  * }, {@code <img/>}</li>
  * <li>Escapes bare {@code &}, {@code <}, {@code >} characters</li>
  * <li>Replaces non-breaking spaces ({@code \u00a0}) with regular spaces</li>
@@ -141,6 +142,7 @@ public class ConvTab2Xdxf {
 		String output = resolve(cli, config, "out");
 		String lang = resolve(cli, config, "lang");
 		String name = resolve(cli, config, "name");
+		String noValid = resolve(cli, config, "no-validate");
 
 		var missing = new ArrayList<String>();
 		if (input == null)
@@ -160,7 +162,7 @@ public class ConvTab2Xdxf {
 
 		boolean fromStdin = "-".equals(input);
 		boolean toStdout = "-".equals(output);
-		boolean noValidate = "true".equals(config.get("novalidate"));
+		boolean noValidate = "true".equalsIgnoreCase(noValid);
 
 		Path outFile = toStdout ? null : Path.of(output);
 		String lang639 = toIso6392(lang);
@@ -428,7 +430,7 @@ public class ConvTab2Xdxf {
 			case "--out", "-o" -> map.put("out", args[++i]);
 			case "--lang", "-l" -> map.put("lang", args[++i]);
 			case "--name", "-n" -> map.put("name", args[++i]);
-			case "--no-validate", "-V" -> map.put("novalidate", "true");
+			case "--no-validate", "-V" -> map.put("no-validate", "true");
 			default -> err(String.format("Warning: unknown argument '%s', ignoring.", args[i]));
 			}
 		}
