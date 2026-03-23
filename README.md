@@ -52,21 +52,21 @@ linux/chain-kaikki-2-xdxf confs/kiakki2xdxf-pten-pt.config
 linux/chain-stardict-2-xdxf confs/stardict2xdxf-pt-pt.config
 ```
 
-Example config (`confs/kiakki2xdxf-pten-pt.config`):
+Example config (`confs/kiakki2xdxf-pt-pt.config`):
 
 ```properties
 kaikki2tab.in=data/kaikki/pt-extract.jsonl.gz
 kaikki2tab.out=-
-kaikki2tab.lang=pt,en
+kaikki2tab.lang=pt,pt
 kaikki2tab.embedded-defs=SEPARATE
 
 tab2xdxf.in=-
-tab2xdxf.out=data/out/kaikki-pten-pt.xdxf
-tab2xdxf.lang=pt,en
-tab2xdxf.name=Wiktionary.org PT+EN->PT (Kaikki)
+tab2xdxf.out=data/out/kaikki-pt-pt.xdxf
+tab2xdxf.lang=pt
+tab2xdxf.name=Wiktionary.org PT->PT (Kaikki)
 
-xdxf2pcdic.in=data/out/kaikki-pten-pt.xdxf
-xdxf2pcdic.out=data/out/kaikki-pten-pt.dic
+xdxf2pcdic.in=data/out/kaikki-pt-pt.xdxf
+xdxf2pcdic.out=data/out/kaikki-pt-pt.dic
 xdxf2pcdic.lang=pt
 xdxf2pbdic.merge-defs=ALWAYS
 ```

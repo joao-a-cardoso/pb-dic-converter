@@ -3,6 +3,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
 import java.util.Map.Entry;
+import java.util.function.Function;
+import java.util.regex.MatchResult;
 import java.util.regex.Pattern;
 import java.util.stream.*;
 import java.util.zip.GZIPInputStream;
@@ -55,7 +57,13 @@ import java.util.zip.GZIPInputStream;
  * <ul>
  * <li>{@code --lang} is mandatory (CLI or config); accepts one or more
  * comma-separated ISO 639-1 codes</li>
- * <li>Entries whose {@code lang_code} is not in the filter are skipped</li>
+ * <ul>
+ * <li>The first language is considered the 'From' language</li>
+ * <li>The second language is considered the 'To' language. If not specified, it
+ * will be the same as the 'From'</li>
+ * </ul>
+ * <li>Entries whose {@code lang_code} does not correspond to the 'From'
+ * language are skipped</li>
  * </ul>
  *
  * <br>
@@ -93,7 +101,7 @@ public class ConvKaikki2Tab {
 		System.err.println(msg);
 	}
 
-	static String mainLang = null;
+	static String langFrom = null, langTo = null;
 
 	@SuppressWarnings("unchecked")
 	public static void main(String[] args) throws Exception {
@@ -142,11 +150,10 @@ public class ConvKaikki2Tab {
 
 		boolean toStdout = "-".equals(output);
 
-		Set<String> langFilter;
 		{
-			var arrLangs = langArg.split(",");
-			mainLang = arrLangs[0];
-			langFilter = new HashSet<>(Arrays.asList(arrLangs));
+			var arrLangs = langArg.toUpperCase().split(",");
+			langFrom = arrLangs[0];
+			langTo = arrLangs.length == 1 ? langFrom : arrLangs[1];
 		}
 
 		Path inFile = Path.of(input);
@@ -159,7 +166,7 @@ public class ConvKaikki2Tab {
 		err(TOOL);
 		errRaw(String.format("  input           : %s", inFile));
 		errRaw(String.format("  output          : %s", (toStdout ? "<stdout>" : output)));
-		errRaw(String.format("  lang            : %s (main: %s)", langFilter, mainLang));
+		errRaw(String.format("  lang            : %s -> %s", langFrom, langTo));
 		errRaw(String.format("  embedded-defs  : %s", ewArg));
 		if (configPath != null)
 			errRaw(String.format("  config          : %s", configPath));
@@ -192,7 +199,7 @@ public class ConvKaikki2Tab {
 					Map<String, ?> entry = new JsonParser(line).parseObject();
 
 					// Filter by language
-					if (!langFilter.contains(getStr(entry, "lang_code"))) {
+					if (!langFrom.equalsIgnoreCase(getStr(entry, "lang_code"))) {
 						filtered++;
 						continue;
 					}
@@ -261,7 +268,6 @@ public class ConvKaikki2Tab {
 
 	// --- Definition builder ---
 
-	@SuppressWarnings("unchecked")
 	static String buildDefinition(String word, Map<String, ?> entry, boolean emitEmbedded) {
 
 		boolean keepExpressionsWithEmptyContent = true;
@@ -310,9 +316,9 @@ public class ConvKaikki2Tab {
 		}
 
 		// 2. Plural forms (nouns only)
+		var plurals = new ArrayList<String>();
 		if (!"verb".equals(getStr(entry, "pos"))) {
 			List<Map<String, ?>> forms = getList(entry, "forms", null);
-			var plurals = new ArrayList<String>();
 			for (var fm : forms) {
 				List<?> ftags = getList(fm, "tags", null);
 				if (ftags.contains("plural")) {
@@ -344,8 +350,8 @@ public class ConvKaikki2Tab {
 
 		// 4. Senses
 		sbDef.append("<ol>");
-		for (var s : senses) {
-			var sense = (Map<String, Object>) s;
+		for (var sense : senses) {
+
 			sbDef.append("<li>");
 			sbDef.append(buildDomainText(sense));
 
@@ -356,7 +362,7 @@ public class ConvKaikki2Tab {
 			}
 
 			// Example
-			sbDef.append(buildExampleText(sense, word));
+			sbDef.append(buildExampleText(sense, word, plurals));
 			sbDef.append("</li>");
 		}
 		sbDef.append("</ol>");
@@ -461,7 +467,7 @@ public class ConvKaikki2Tab {
 					sb.append(escapeXml(gloss));
 				}
 
-				sb.append(buildExampleText(sense, exprWord));
+				sb.append(buildExampleText(sense, exprWord, null));
 				sb.append("</li>");
 			}
 			sb.append("</ol>");
@@ -481,9 +487,38 @@ public class ConvKaikki2Tab {
 			// skip glosses that has fewer than 2 characters and contains no alphabetic
 			// character
 			// and use the first suitable gloss
-			String composeGloss = glosses.stream()
-					.filter(gl -> gl.length() >= 2 && gl.codePoints().anyMatch(Character::isLetter))
-					.collect(Collectors.joining(" "));
+			glosses = glosses.stream()//
+					.filter(gl -> !strIsEmpty(gl))
+					.filter(gl -> gl.length() >= 2 && gl.codePoints().anyMatch(Character::isLetter))//
+					.map(String::strip) //
+					.toList();
+
+			String composeGloss;
+			if (glosses.size() <= 1) {
+				composeGloss = glosses.isEmpty() ? "" : glosses.get(0);
+			} else {
+				var sbGloss = new StringBuilder();
+				for (var gl : glosses) {
+					if (sbGloss.isEmpty()) {
+						sbGloss.append(gl);
+						continue;
+					}
+
+					boolean currStartsAlnum = Character.isLetterOrDigit(gl.codePointAt(0));
+					boolean prevEndsAlnum = Character.isLetterOrDigit(sbGloss.codePointAt(sbGloss.length() - 1));
+
+					if (prevEndsAlnum && currStartsAlnum) {
+						sbGloss.append(", ").append(gl);
+					} else if (!prevEndsAlnum && currStartsAlnum) {
+						sbGloss.append(" ").append(gl);
+					} else if (!prevEndsAlnum && !currStartsAlnum) {
+						sbGloss.append(" ").append(gl);
+					} else {
+						sbGloss.append(gl);
+					}
+				}
+				composeGloss = sbGloss.toString();
+			}
 
 			if (!strIsEmpty(composeGloss)) {
 				composeGloss = stripWiki(composeGloss);
@@ -491,22 +526,25 @@ public class ConvKaikki2Tab {
 			}
 
 			return composeGloss;
-		} else {
+		} else
+
+		{
 			return null;
 		}
 	}
 
 	static String formatTitle(String title, boolean large) {
+
+		title = escapeXml(title);
 		if (large) {
 			title = "<large>" + title + "</large>";
 		}
-		title = escapeXml(title);
 		title = "<b>" + title + ": </b>";
 		return title;
 	}
 
 	/** Build text representing examples for the given sense */
-	static String buildExampleText(Map<String, ?> sense, String refWord) {
+	static String buildExampleText(Map<String, ?> sense, String refWord, List<String> refPlurals) {
 
 		if (strIsEmpty(refWord)) {
 			return "";
@@ -517,24 +555,35 @@ public class ConvKaikki2Tab {
 			return "";
 		}
 
-		// Selected quotes must contain the reference word exactly (case-insentive) or
-		// as part of word use look behind (must be preceeded by non-alphanum or begin
-		// line)
-		Pattern pattRefword = Pattern.compile("(?:(?<=[^\\p{Alnum}])|^)" + refWord,
-				Pattern.CASE_INSENSITIVE | Pattern.MULTILINE | Pattern.UNICODE_CASE);
+		String openHilite = "<b>", closeHilite = "</b>";
+
+		Pattern pattRefword4Check, pattRefword4Hilite;
+		{
+			// Selected quotes must contain the reference word exactly (case-insentive) or
+			// as part of word use look behind (must be preceded by non-alphanum or begin
+			// line)
+			// Highlight preferably occurrences that are delimited with non-alphanum (left
+			// and right)
+			String lookbehindNonAlpanum = "(?:(?<=[^\\p{Alnum}])|^)";
+			String lookaheadNonAlphanum = "(?:(?=[^\\p{Alnum}])|$)";
+			pattRefword4Check = Pattern.compile(lookbehindNonAlpanum + refWord,
+					Pattern.CASE_INSENSITIVE | Pattern.MULTILINE | Pattern.UNICODE_CASE);
+			pattRefword4Hilite = Pattern.compile(lookbehindNonAlpanum + refWord + lookaheadNonAlphanum,
+					Pattern.CASE_INSENSITIVE | Pattern.MULTILINE | Pattern.UNICODE_CASE);
+		}
 
 		var candidateQuotes = new LinkedHashMap<String, List<List<Number>>>();
 		for (var ex : examples) {
 			String text = getStr(ex, "text");
-			List<List<Number>> boldOffsets = getList(ex, "bold_text_offsets", null);
-			candidateQuotes.put(text, boldOffsets);
+			List<List<Number>> offsets = getList(ex, "bold_text_offsets", null);
+			candidateQuotes.put(text, offsets);
 		}
 
 		// Uses candidates that do match the pattern or defined offsets (filtering
 		// errors in date)
 		Entry<String, List<List<Number>>> quote = candidateQuotes.entrySet().stream()//
 				.filter(en -> !strIsEmpty(en.getKey()))//
-				.filter(en -> pattRefword.matcher(en.getKey()).find() || !en.getValue().isEmpty()) //
+				.filter(en -> pattRefword4Check.matcher(en.getKey()).find() || !en.getValue().isEmpty()) //
 				.findFirst().orElse(null);
 
 		if (quote == null)
@@ -542,30 +591,46 @@ public class ConvKaikki2Tab {
 
 		String quoteText = quote.getKey();
 
-		// the quotation defines offsets for bold, filter out invalid ones
-		List<List<Number>> boldOffsets = quote.getValue().stream() //
+		// the quotation defines offsets for highlight, filter out invalid ones
+		List<List<Number>> hiliteOffsets = quote.getValue().stream() //
 				.filter(of -> of.size() == 2)//
 				.filter(of -> of.get(0).intValue() < of.get(1).intValue()) //
-				.filter(of -> of.get(1).intValue() < quote.getKey().length()) //
+				.filter(of -> of.get(1).intValue() <= quote.getKey().length()) //
 				.toList();
 
-		if (boldOffsets.isEmpty() || refWord.length() <= 1) {
-			quoteText = pattRefword.matcher(quoteText).replaceAll(fw -> "<b>" + fw.group() + "</b>");
-		} else {
+		if (hiliteOffsets.isEmpty() || (hiliteOffsets.size() > 1 && refWord.length() <= 2)) {
+			// there are no offsets, or they seem to be too many, we do the highlighting
+			// ourselves
+			// we use regular expressions
+			var orig = quoteText;
+			Function<MatchResult, String> replacer = fw -> openHilite + fw.group() + closeHilite;
+			quoteText = pattRefword4Hilite.matcher(quoteText).replaceAll(replacer);
+			if (orig.equals(quoteText)) {
+				// previous operation has no changes, be more aggressive
+				quoteText = pattRefword4Check.matcher(quoteText).replaceAll(replacer);
+			}
+		} else
+
+		{
+			// insert the highling pairs
+			// insert must me made from end to start to keep simple to manage indexes
 			var wrk = new StringBuilder(quoteText);
-			for (int i = boldOffsets.size() - 1; i >= 0; --i) {
-				// insert must me made from end to start to keep simple to manage indexes
-				List<Number> pair = boldOffsets.get(i);
+			for (int i = hiliteOffsets.size() - 1; i >= 0; --i) {
+				List<Number> pair = hiliteOffsets.get(i);
 				if (pair.size() >= 2) {
 					int beg = pair.get(0).intValue(), end = pair.get(1).intValue();
-					wrk.insert(end, "</b>").insert(beg, "<b>");
+					wrk.insert(end, closeHilite).insert(beg, openHilite);
 				}
 			}
 			quoteText = stripWiki(wrk.toString().replace("\n", " / "));
 		}
 
 		var sb = new StringBuilder();
-		quoteText = "<i>\"" + quoteText + "\"</i>";
+		if (!(quoteText.startsWith("\"") && quoteText.endsWith("\""))) {
+			// add enclosing quotes if don't already exist
+			quoteText = "\"" + quoteText + "\"";
+		}
+		quoteText = "<i>" + quoteText + "</i>";
 		sb.append(" <small>(" + translateTerm("example") + ": ").append(quoteText).append(")</small>");
 		return escapeXml(sb.toString());
 	}
@@ -637,7 +702,8 @@ public class ConvKaikki2Tab {
 	}
 
 	/**
-	 * Returns translated term, falling back to received one. Not escaped for xml.
+	 * Returns translated term to the given language, falling back to received one.
+	 * Not escaped for xml.
 	 */
 	static String translateRaw(Object term) {
 		String strTerm = term == null ? null : term.toString().trim();
@@ -647,7 +713,7 @@ public class ConvKaikki2Tab {
 
 		String result = null;
 		// TODO: read mapping from a parameter file, using language stored in global
-		// lang
+		// langTo
 
 		// by default return the received translateTerm
 		return result != null ? result : strTerm;
@@ -778,7 +844,9 @@ public class ConvKaikki2Tab {
 
 				--in  accepts .jsonl or .jsonl.gz files.
 				--out accepts a file path or - for stdout.
-				--lang accepts one or more comma-separated ISO 639-1 language codes.
+				--lang accepts one or more comma-separated ISO 639-1 language codes."
+				       First language shall be the 'From', the second shall be the 'To'.
+				       By default 'To' shall be same 'From'.
 				--embedded-defs controls how expressions are emitted (default: BOTH):
 				    KEEP     — expressions appear only embedded inside the parent word's definition.
 				    SEPARATE — expressions are emitted only as their own standalone entries.
