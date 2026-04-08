@@ -1,11 +1,30 @@
-import java.io.*;
+
+import static shared.XmlHelper.decodeEntities;
+
+import java.io.BufferedOutputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
-import java.util.*;
-import java.util.zip.*;
-import javax.xml.parsers.*;
-import org.xml.sax.*;
-import org.xml.sax.helpers.DefaultHandler;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.TreeMap;
+import java.util.zip.Deflater;
+
+import shared.ArgsHelper;
+import shared.Constants;
+import shared.XdxfHelper;
+import shared.XdxfHelper.ParsedEntry;
 
 /**
  * xdxf-2-pbdic — convert an XDXF dictionary to PocketBook's native .dic (SDIC)
@@ -39,34 +58,31 @@ public class ConvXdxf2Pbdic {
 	static final byte FMT_BOLD = 0x02;
 	static final byte FMT_ITALIC = 0x03;
 	static final byte FMT_NEWLINE = 0x0a;
-	static final byte[] BULLET = "\u2022 ".getBytes(StandardCharsets.UTF_8);
+	static final byte[] FMT_BULLET = (String.valueOf(Constants.UC_BULLET) + " ").getBytes(StandardCharsets.UTF_8);
 
 	static final int TARGET_BLOCK_COMPRESSED = 4_096; // match converter.exe: target compressed size ≤ 4096 bytes
 	static final int TARGET_BLOCK_DECOMPRESSED = 27_000; // hard ceiling on decompressed block size (firmware buffer)
 	static final int TARGET_BLOCK_ENTRIES = 110; // ~110 entries/block keeps index_dsz ~51k, safely under 55k firmware
 													// limit
 
-	// ── Entry ─────────────────────────────────────────────────────────────────
-	record Entry(String word, byte[] definition) {
-		int serialisedLength() {
-			return 2 + word.getBytes(StandardCharsets.UTF_8).length + 1 + definition.length + 1;
-		}
-	}
-
 	// ── main ──────────────────────────────────────────────────────────────────
 	public static void main(String[] args) throws Exception {
 		if (args.length == 0 || Arrays.asList(args).contains("--help")) {
-			printUsage();
+			err(usage());
 			System.exit(0);
 		}
 
-		var config = parseArgs(args);
+		var cli = parseArgs(args);
+		var argsHlp = new ArgsHelper("xdxf2pcdic", er -> err(er), () -> usage());
+		String configPath = cli.get("config");
+		Properties config = argsHlp.loadProperties(configPath, true);
+		argsHlp.mergeConfig2Cli(List.of("in", "out", "lang", "langdir", "name", "merge-defs"), cli, config);
 
-		String inPath = require(config, "in", "--in  : input XDXF file");
-		String outPath = require(config, "out", "--out : output .dic file");
-		String lang = require(config, "lang", "--lang: language code, e.g. pt");
-		String langDir = resolve(config, "langdir", "lang/" + lang);
-		String name = resolve(config, "name", null);
+		String inPath = argsHlp.require(cli, "in", "--in/-i");
+		String outPath = argsHlp.require(cli, "out", "--out/-o");
+		String lang = argsHlp.require(cli, "lang", "--lang/-l");
+		String langDir = argsHlp.resolve(cli, "langdir", "lang/" + lang);
+		String name = argsHlp.resolve(cli, "name", null);
 
 		boolean fromStdin = "-".equals(inPath);
 		Path xdxfFile = fromStdin ? null : Path.of(inPath);
@@ -84,23 +100,12 @@ public class ConvXdxf2Pbdic {
 		}
 
 		if (name == null) {
-			if (fromStdin) {
-				name = "dictionary";
-			} else {
-				String fname = xdxfFile.getFileName().toString();
-				name = fname.contains(".") ? fname.substring(0, fname.lastIndexOf('.')) : fname;
-			}
+			// TODO; read the name from the XDXF content
+			String fname = outPath;
+			name = fname.contains(".") ? fname.substring(0, fname.lastIndexOf('.')) : fname;
 		}
 
-		String cp = config.get("config");
-		String mergeVal = config.get("merge-defs");
-		if (mergeVal == null) {
-			err("Error: missing required argument -m / --merge-defs ALWAYS|EXACT|NEVER");
-			errRaw("  ALWAYS -- merge headwords that match case-insensitively; drop identical entries");
-			errRaw("  EXACT  -- merge headwords that match exactly (case-sensitive); drop identical entries");
-			errRaw("  NEVER  -- never merge; only drop byte-identical duplicates");
-			System.exit(1);
-		}
+		String mergeVal = argsHlp.requireUC(cli, "merge-defs", "--merge-defs/-m");
 		mergeVal = mergeVal.toUpperCase();
 		if (!mergeVal.equals("ALWAYS") && !mergeVal.equals("EXACT") && !mergeVal.equals("NEVER")) {
 			err(String.format("Error: -m / --merge-defs must be ALWAYS, EXACT or NEVER, got: %s", mergeVal));
@@ -114,8 +119,8 @@ public class ConvXdxf2Pbdic {
 		errRaw(String.format("  langdir : %s", langDirPath));
 		errRaw(String.format("  name    : %s", name));
 		errRaw(String.format("  merge-defs: %s", joinMode));
-		if (cp != null)
-			errRaw(String.format("  config  : %s", cp));
+		if (configPath != null)
+			errRaw(String.format("  config  : %s", configPath));
 		err("");
 
 		// 1. Language files
@@ -126,7 +131,9 @@ public class ConvXdxf2Pbdic {
 
 		// 2. Parse XDXF
 		err("Parsing...");
-		var entries = fromStdin ? parseXdxf(System.in) : parseXdxf(new FileInputStream(xdxfFile.toFile()));
+		InputStream input = fromStdin ? System.in : new FileInputStream(xdxfFile.toFile());
+		List<ParsedEntry> entries = XdxfHelper.parseXdxf(ConvXdxf2Pbdic::htmlToSdic, input);
+
 		err(String.format("read %d entries.", entries.size()));
 
 		// 3. Sort by collated headword
@@ -141,10 +148,10 @@ public class ConvXdxf2Pbdic {
 		// NEVER — headword match is case-sensitive; never merge, only drop
 		// byte-identical duplicates
 		err("Merging duplicates...");
-		var merged = new ArrayList<Entry>(entries.size());
-		for (Entry e : entries) {
+		var merged = new ArrayList<ParsedEntry>(entries.size());
+		for (ParsedEntry e : entries) {
 			if (!merged.isEmpty()) {
-				Entry prev = merged.get(merged.size() - 1);
+				ParsedEntry prev = merged.get(merged.size() - 1);
 				boolean sameWord = joinMode.equals("ALWAYS") ? prev.word().equalsIgnoreCase(e.word())
 						: prev.word().equals(e.word());
 				if (sameWord) {
@@ -156,7 +163,7 @@ public class ConvXdxf2Pbdic {
 								? (prev.word().equals(prev.word().toLowerCase(java.util.Locale.ROOT)) ? prev.word()
 										: e.word())
 								: prev.word();
-						merged.add(new Entry(keepWord, joinDefsBlankLine(prev.definition(), e.definition())));
+						merged.add(new ParsedEntry(keepWord, joinDefsBlankLine(prev.definition(), e.definition())));
 					} else if (sameDef) {
 						// byte-identical duplicate — discard silently
 					} else {
@@ -256,91 +263,16 @@ public class ConvXdxf2Pbdic {
 		return out.toByteArray();
 	}
 
-	// ── 2. XDXF parser ───────────────────────────────────────────────────────
-
-	static List<Entry> parseXdxf(InputStream stream) throws Exception {
-		var factory = SAXParserFactory.newInstance();
-		factory.setValidating(false);
-		factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
-
-		var entries = new ArrayList<Entry>();
-		var headwords = new ArrayList<String>();
-		var defRaw = new StringBuilder();
-		var kBuf = new StringBuilder();
-		var state = new boolean[2]; // [0]=inAr, [1]=inK
-
-		SAXParser saxParser = factory.newSAXParser();
-		saxParser.setProperty("http://www.oracle.com/xml/jaxp/properties/maxGeneralEntitySizeLimit", 100_000_000);
-		saxParser.setProperty("http://www.oracle.com/xml/jaxp/properties/totalEntitySizeLimit", 100_000_000);
-
-		saxParser.parse(stream, new DefaultHandler() {
-			@Override
-			public void startElement(String u, String l, String qName, Attributes a) {
-				switch (qName.toLowerCase()) {
-				case "ar" -> {
-					state[0] = true;
-					headwords.clear();
-					defRaw.setLength(0);
-				}
-				case "k" -> {
-					state[1] = true;
-					kBuf.setLength(0);
-				}
-				default -> {
-					if (state[0] && !state[1])
-						defRaw.append('<').append(qName.toLowerCase()).append('>');
-				}
-				}
-			}
-
-			@Override
-			public void endElement(String u, String l, String qName) {
-				switch (qName.toLowerCase()) {
-				case "ar" -> {
-					if (!headwords.isEmpty() && defRaw.length() > 0) {
-						byte[] def = htmlToSdic(defRaw.toString().trim());
-						for (String w : headwords)
-							if (!w.isBlank())
-								entries.add(new Entry(w.trim(), def));
-					}
-					state[0] = false;
-				}
-				case "k" -> {
-					headwords.add(kBuf.toString());
-					state[1] = false;
-				}
-				default -> {
-					if (state[0] && !state[1])
-						defRaw.append("</").append(qName.toLowerCase()).append('>');
-				}
-				}
-			}
-
-			@Override
-			public void characters(char[] ch, int start, int length) {
-				if (state[1])
-					kBuf.append(ch, start, length);
-				else if (state[0]) {
-					String t = new String(ch, start, length);
-					defRaw.append(t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"));
-				}
-			}
-
-			@Override
-			public InputSource resolveEntity(String pub, String sys) {
-				return new InputSource(new StringReader(""));
-			}
-		});
-		return entries;
-	}
-
 	// ── 3. HTML → SDIC bytecodes ──────────────────────────────────────────────
 
 	/**
 	 * Convert an HTML definition string to SDIC inline bytecodes. Uses a minimal
 	 * recursive-descent tokeniser — no external libraries needed.
 	 */
-	static byte[] htmlToSdic(String html) {
+	public static byte[] htmlToSdic(CharSequence csHtml) {
+
+		String html = csHtml == null ? "" : csHtml.toString();
+
 		var out = new ByteArrayOutputStream();
 		int i = 0;
 		int len = html.length();
@@ -351,8 +283,10 @@ public class ConvXdxf2Pbdic {
 					appendUtf8(out, html.substring(i));
 					break;
 				}
-				String tag = html.substring(i + 1, end).trim().toLowerCase();
+				String tag = html.substring(i + 1, end).toString().trim().toLowerCase();
 				boolean closing = tag.startsWith("/");
+				boolean opening = !closing;
+
 				if (closing)
 					tag = tag.substring(1).trim();
 				// strip attributes
@@ -360,7 +294,7 @@ public class ConvXdxf2Pbdic {
 				if (sp > 0)
 					tag = tag.substring(0, sp);
 
-				if (!closing) {
+				if (opening) {
 					switch (tag) {
 					case "b", "strong" -> {
 						out.write(FMT_BOLD);
@@ -375,7 +309,7 @@ public class ConvXdxf2Pbdic {
 						out.write(FMT_NEWLINE);
 					}
 					case "p", "div" -> out.write(' ');
-					case "li" -> out.write(' ');
+					case "li" -> out.writeBytes(FMT_BULLET);
 					case "ol", "ul" -> {
 						/* container — no output */ }
 					}
@@ -445,18 +379,15 @@ public class ConvXdxf2Pbdic {
 		out.writeBytes(s.getBytes(StandardCharsets.UTF_8));
 	}
 
-	static String decodeEntities(String s) {
-		return s.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"")
-				.replace("&apos;", "'").replace("&nbsp;", " ");
-	}
-
 	static byte[] trimBytes(byte[] data) {
 		int s = 0;
-		while (s < data.length && (data[s] == ' ' || data[s] == '\n' || data[s] == '\r'))
+		while (s < data.length && (data[s] == ' ' || data[s] == '\n' || data[s] == '\r')) {
 			s++;
+		}
 		int e = data.length - 1;
-		while (e > s && (data[e] == ' ' || data[e] == '\n' || data[e] == '\r'))
+		while (e > s && (data[e] == ' ' || data[e] == '\n' || data[e] == '\r')) {
 			e--;
+		}
 		return (s == 0 && e == data.length - 1) ? data : Arrays.copyOfRange(data, s, e + 1);
 	}
 
@@ -465,12 +396,12 @@ public class ConvXdxf2Pbdic {
 	record Block(byte[] firstWordUtf8, byte[] container) {
 	}
 
-	static List<Block> packBlocks(List<Entry> entries) throws IOException {
+	static List<Block> packBlocks(List<ParsedEntry> entries) throws IOException {
 		var blocks = new ArrayList<Block>();
-		var current = new ArrayList<Entry>();
+		var current = new ArrayList<ParsedEntry>();
 		int currentDsz = 0;
 
-		for (Entry e : entries) {
+		for (ParsedEntry e : entries) {
 			int entrySize = e.serialisedLength();
 			current.add(e);
 			currentDsz += entrySize;
@@ -508,9 +439,9 @@ public class ConvXdxf2Pbdic {
 		return out;
 	}
 
-	static Block compressBlock(List<Entry> entries) throws IOException {
+	static Block compressBlock(List<ParsedEntry> entries) throws IOException {
 		var raw = new ByteArrayOutputStream();
-		for (Entry e : entries) {
+		for (ParsedEntry e : entries) {
 			byte[] wBytes = e.word().getBytes(StandardCharsets.UTF_8);
 			int len = 2 + wBytes.length + 1 + e.definition().length + 1;
 			if (len > 0xFFFF)
@@ -679,48 +610,13 @@ public class ConvXdxf2Pbdic {
 			default -> err(String.format("Warning: unknown argument '%s', ignoring.", args[i]));
 			}
 		}
-		var props = new Properties();
-		String cp = cli.get("config");
-		if (cp != null) {
-			Path p = Path.of(cp);
-			if (!Files.exists(p)) {
-				err(String.format("Error: config not found: %s", p));
-				System.exit(1);
-			}
-			try (var r = new java.io.InputStreamReader(new FileInputStream(p.toFile()), StandardCharsets.UTF_8)) {
-				props.load(r);
-			}
-		}
-		// Merge props into cli (cli wins)
-		String NS = "xdxf2pcdic.";
-		for (String key : List.of("in", "out", "lang", "langdir", "name", "merge-defs")) {
-			if (!cli.containsKey(key)) {
-				String v = props.getProperty(NS + key);
-				if (v == null)
-					v = props.getProperty(key);
-				if (v != null)
-					cli.put(key, v);
-			}
-		}
+
 		return cli;
-	}
-
-	static String resolve(Map<String, String> config, String key, String def) {
-		return config.getOrDefault(key, def);
-	}
-
-	static String require(Map<String, String> config, String key, String desc) {
-		String v = config.get(key);
-		if (v == null) {
-			err(String.format("Error: missing required argument %s", desc));
-			System.exit(1);
-		}
-		return v;
 	}
 
 	static final String TOOL = "xdxf-2-pbdic";
 
-	static void err(String msg) {
+	public static void err(String msg) {
 		System.err.println((msg != null && !msg.isBlank() ? TOOL + ": " : "") + msg);
 	}
 
@@ -728,23 +624,28 @@ public class ConvXdxf2Pbdic {
 		System.err.println(msg);
 	}
 
-	static void printUsage() {
-		errRaw("xdxf-2-pbdic — convert XDXF to PocketBook .dic\n");
-		errRaw("Usage:");
-		errRaw("  linux/xdxf-2-pbdic -i <xdxf> -o <dic> -l <lang> [options]\n");
-		errRaw("Required:");
-		errRaw("  -i / --in       Input XDXF file, or - to read from stdin");
-		errRaw("  -o / --out      Output .dic file");
-		errRaw("  -l / --lang     Language code (e.g. pt, en, fr)");
-		errRaw("  -m / --merge-defs  ALWAYS — headword match is case-insensitive; merge different defs, drop identical");
-		errRaw("                     EXACT  — headword match is case-sensitive;   merge different defs, drop identical");
-		errRaw("                     NEVER  — never merge; only drop byte-identical duplicates\n");
-		errRaw("Optional:");
-		errRaw("  -d / --langdir  Language files dir (default: lang/<lang>/)");
-		errRaw("  -n / --name     Dictionary title");
-		errRaw("  -c / --config   .properties config file (namespace: xdxf2dic.*)\n");
-		errRaw("Example:");
-		errRaw("  linux/xdxf-2-pbdic -i data/out/kaikki-pt.xdxf -o data/out/kaikki-pt.dic -l pt -n \"Dicionário PT\"");
-		errRaw("  linux/kaikki-2-tab -c dict.properties | linux/xdxf-2-pbdic -i - -o data/out/kaikki-pt.dic -l pt");
+	static String usage() {
+		return """
+				Convert dictionary data drom XDXF to PocketBook .dic
+
+				Usage:
+				  linux/xdxf-2-pbdic -i <xdxf> -o <dic> -l <lang> [options]
+
+				Required:
+				  -i / --in       Input XDXF file, or - to read from stdin
+				  -o / --out      Output .dic file
+				  -l / --lang     Language code (e.g. pt, en, fr)
+				  -m / --merge-defs  ALWAYS — headword match is case-insensitive; merge different defs, drop identical
+				                     EXACT  — headword match is case-sensitive;   merge different defs, drop identical
+				                     NEVER  — never merge; only drop byte-identical duplicates
+				Optional:
+				  -d / --langdir  Language files dir (default: lang/<lang>/)
+				  -n / --name     Dictionary title (default to output file without extension. TODO: Read the name from the input XDXF content)
+				  -c / --config   .properties config file (namespace: xdxf2dic.*)
+
+				Examples:
+				  linux/xdxf-2-pbdic -i data/out/kaikki-pt.xdxf -o data/out/kaikki-pt.dic -l pt -n \"Dicionário PT\"
+				  linux/kaikki-2-tab -c dict.properties | linux/xdxf-2-pbdic -i - -o data/out/kaikki-pt.dic -l pt
+				  """;
 	}
 }

@@ -1,13 +1,37 @@
-import java.io.*;
+import static shared.Constants.UC_BULLET;
+import static shared.XmlHelper.encodeEntities;
+
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
-import java.util.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Properties;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.regex.MatchResult;
 import java.util.regex.Pattern;
-import java.util.stream.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.zip.GZIPInputStream;
+
+import shared.ArgsHelper;
+import shared.JsonParser;
 
 /**
  * Converts a Kaikki JSONL dictionary dump to a tabfile (TSV) for use with
@@ -91,8 +115,6 @@ public class ConvKaikki2Tab {
 
 	static final String TOOL = "kaikki-2-tab";
 
-	static final char UC_BULLET = '\u2022';
-
 	static void err(String msg) {
 		System.err.println(TOOL + ": " + msg);
 	}
@@ -103,43 +125,27 @@ public class ConvKaikki2Tab {
 
 	static String langFrom = null, langTo = null;
 
-	@SuppressWarnings("unchecked")
+	// ── main ──────────────────────────────────────────────────────────────────
 	public static void main(String[] args) throws Exception {
 		if (args.length == 0 || Arrays.asList(args).contains("--help")) {
-			printUsage();
+			err(usage());
 			System.exit(0);
 		}
 
 		var cli = parseArgs(args);
 
 		// Load config file if specified
-		var config = new Properties();
 		String configPath = cli.get("config");
-		if (configPath != null) {
-			Path cp = Path.of(configPath);
-			if (!Files.exists(cp)) {
-				err(String.format("Error: config file not found: %s", cp));
-				System.exit(1);
-			}
-			try (var reader = new BufferedReader(
-					new InputStreamReader(new FileInputStream(cp.toFile()), StandardCharsets.UTF_8))) {
-				config.load(reader);
-			}
-		}
+		var argsHlp = new ArgsHelper("kaikki2tab", er -> err(er), () -> usage());
 
-		String input = resolve(cli, config, "in");
-		String output = resolve(cli, config, "out");
-		String langArg = resolve(cli, config, "lang");
+		Properties config = argsHlp.loadProperties(configPath, true);
+		argsHlp.mergeConfig2Cli(List.of("in", "out", "lang", "embedded-defs"), cli, config);
 
-		if (input == null || output == null || langArg == null) {
-			printUsage();
-			System.exit(1);
-		}
+		String input = argsHlp.require(cli, "in", "--in/-i");
+		String output = argsHlp.require(cli, "out", "--out/-o");
+		String langArg = argsHlp.require(cli, "lang", "--lang/-l");
 
-		String ewArg = resolve(cli, config, "embedded-defs");
-		if (ewArg == null)
-			ewArg = "BOTH";
-		ewArg = ewArg.toUpperCase();
+		String ewArg = argsHlp.resolveUC(cli, "embedded-defs", "BOTH");
 		if (!ewArg.equals("KEEP") && !ewArg.equals("SEPARATE") && !ewArg.equals("BOTH")) {
 			err(String.format("Error: --embedded-defs must be KEEP, SEPARATE or BOTH, got: %s", ewArg));
 			System.exit(1);
@@ -167,7 +173,7 @@ public class ConvKaikki2Tab {
 		errRaw(String.format("  input           : %s", inFile));
 		errRaw(String.format("  output          : %s", (toStdout ? "<stdout>" : output)));
 		errRaw(String.format("  lang            : %s -> %s", langFrom, langTo));
-		errRaw(String.format("  embedded-defs  : %s", ewArg));
+		errRaw(String.format("  embedded-defs   : %s", ewArg));
 		if (configPath != null)
 			errRaw(String.format("  config          : %s", configPath));
 		errRaw("");
@@ -236,6 +242,7 @@ public class ConvKaikki2Tab {
 
 				} catch (Exception e) {
 					err(String.format("Warning: skipping malformed line: %s", e.getMessage()));
+					e.printStackTrace();
 					skipped++;
 				}
 			} // while
@@ -282,13 +289,13 @@ public class ConvKaikki2Tab {
 			String gloss = extractGloss(sense);
 			if (strIsEmpty(gloss)) {
 				String posTitle = getStr(entry, "pos_title");
-				gloss = escapeXml(gloss);
+				gloss = encodeEntities(false, gloss);
 				if (posTitle != null) {
 					posTitle = translateTermCap(posTitle);
 					if (shortFormOf) {
-						return "<p>" + formatTitle(posTitle, false) + " - " + gloss + "</p>";
+						return "<p>" + formatTitle(false, posTitle) + " - " + gloss + "</p>";
 					} else {
-						return "<p>" + formatTitle(posTitle, true) + "</p><p>" + gloss + "</p>";
+						return "<p>" + formatTitle(true, posTitle) + "</p><p>" + gloss + "</p>";
 					}
 				} else {
 					return "<p>" + gloss + "</p>";
@@ -309,7 +316,7 @@ public class ConvKaikki2Tab {
 		String gender = tags.contains("masculine") ? "masculine" : tags.contains("feminine") ? "feminine" : null;
 
 		if (posTitle != null) {
-			sbDef.append("<p>" + formatTitle(posTitle, true));
+			sbDef.append("<p>" + formatTitle(true, posTitle));
 			if (gender != null)
 				sbDef.append(" (").append(translateTerm(gender)).append(")");
 			sbDef.append("</p>");
@@ -329,7 +336,8 @@ public class ConvKaikki2Tab {
 			}
 			if (!plurals.isEmpty()) {
 				sbDef.append("<p><i>" + translateTermCap("plural") + " :</i> ")
-						.append(escapeXml(String.join(", ", plurals))).append("</p>");
+						.append(encodeEntities(false, String.join(", ", plurals)))//
+						.append("</p>");
 			}
 		}
 
@@ -344,7 +352,8 @@ public class ConvKaikki2Tab {
 
 			if (!ipas.isEmpty()) {
 				sbDef.append("<p><i>" + translateTermCap("sounds") + ": </i> ")
-						.append(escapeXml(String.join(", ", ipas))).append("</p>");
+						.append(encodeEntities(true, String.join(", ", ipas)))//
+						.append("</p>");
 			}
 		}
 
@@ -358,7 +367,7 @@ public class ConvKaikki2Tab {
 			// Glosses
 			String gloss = extractGloss(sense);
 			if (!strIsEmpty(gloss)) {
-				sbDef.append(escapeXml(gloss));
+				sbDef.append(encodeEntities(false, gloss));
 			}
 
 			// Example
@@ -373,14 +382,17 @@ public class ConvKaikki2Tab {
 			String etym = etymTexts.get(0).strip();
 			if (etym.startsWith(":"))
 				etym = etym.substring(1).strip();
-			sbDef.append("<p><i>" + translateTermCap("ethymology") + ": </i> ").append(escapeXml(etym)).append("</p>");
+			sbDef.append("<p>")//
+					.append("<i>" + translateTermCap("ethymology") + ": </i> ")//
+					.append(encodeEntities(false, etym))//
+					.append("</p>");
 		}
 
 		// 6. Expressions (embedded)
 		if (emitEmbedded) {
 			List<String> exprTexts = buildEmbeddedExpressionsText(entry, keepExpressionsWithEmptyContent);
 			if (!listIsEmpty(exprTexts)) {
-				sbDef.append("<p>" + formatTitle(translateTermCap("expressions"), false) + "</p>")//
+				sbDef.append("<p>" + formatTitle(false, translateTermCap("expressions")) + "</p>")//
 						.append("<ul>");
 				for (String et : exprTexts) {
 					sbDef.append("<li>").append(et).append("</li>");
@@ -413,7 +425,9 @@ public class ConvKaikki2Tab {
 				if (listIsEmpty(exprSenses) && !keepExpressionsWithEmptyContent)
 					continue;
 
-				sb.append("<i>\"").append(escapeXml(exprWord)).append("\"</i>");
+				sb.append("<i>\"<u>")//
+						.append(encodeEntities(false, exprWord))//
+						.append("</u>\"</i>");
 				if (!listIsEmpty(exprSenses)) {
 					var sbEmbed = new StringBuilder();
 					Map<String, ?> exprSense = exprSenses.get(0); // just the first sense
@@ -421,7 +435,7 @@ public class ConvKaikki2Tab {
 
 					String exprGloss = extractGloss(exprSense);
 					if (!strIsEmpty(exprGloss)) {
-						sbEmbed.append(stripWiki(exprGloss));
+						sbEmbed.append(stripWiki(true, exprGloss));
 					}
 					if (sbEmbed.length() > 0) {
 						sb.append(" - ").append(sbEmbed);
@@ -452,7 +466,7 @@ public class ConvKaikki2Tab {
 				continue;
 
 			var sb = new StringBuilder();
-			sb.append("<p>").append(formatTitle(translateTermCap("expression"), true));
+			sb.append("<p>").append(formatTitle(true, translateTermCap("expression")));
 			if (!strIsEmpty(refWord)) {
 				sb.append(" (").append(refWord).append(")");
 			}
@@ -464,7 +478,7 @@ public class ConvKaikki2Tab {
 
 				String gloss = extractGloss(sense);
 				if (!strIsEmpty(gloss)) {
-					sb.append(escapeXml(gloss));
+					sb.append(encodeEntities(false, gloss));
 				}
 
 				sb.append(buildExampleText(sense, exprWord, null));
@@ -521,7 +535,7 @@ public class ConvKaikki2Tab {
 			}
 
 			if (!strIsEmpty(composeGloss)) {
-				composeGloss = stripWiki(composeGloss);
+				composeGloss = stripWiki(true, composeGloss);
 				composeGloss = stripChar(composeGloss, UC_BULLET, '/', '=');
 			}
 
@@ -533,11 +547,11 @@ public class ConvKaikki2Tab {
 		}
 	}
 
-	static String formatTitle(String title, boolean large) {
+	static String formatTitle(boolean big, String title) {
 
-		title = escapeXml(title);
-		if (large) {
-			title = "<large>" + title + "</large>";
+		title = encodeEntities(false, title);
+		if (big) {
+			title = "<big>" + title + "</big>";
 		}
 		title = "<b>" + title + ": </b>";
 		return title;
@@ -557,6 +571,11 @@ public class ConvKaikki2Tab {
 
 		String openHilite = "<b>", closeHilite = "</b>";
 
+		Comparator<List<Double>> offsetComparator = (e1, e2) -> {
+			int level1 = e1.get(0).compareTo(e2.get(0));
+			return level1 != 0 ? level1 : e1.get(1).compareTo(e2.get(1));
+		};
+
 		Pattern pattRefword4Check, pattRefword4Hilite;
 		{
 			// Selected quotes must contain the reference word exactly (case-insentive) or
@@ -572,16 +591,16 @@ public class ConvKaikki2Tab {
 					Pattern.CASE_INSENSITIVE | Pattern.MULTILINE | Pattern.UNICODE_CASE);
 		}
 
-		var candidateQuotes = new LinkedHashMap<String, List<List<Number>>>();
+		var candidateQuotes = new LinkedHashMap<String, List<List<Double>>>();
 		for (var ex : examples) {
 			String text = getStr(ex, "text");
-			List<List<Number>> offsets = getList(ex, "bold_text_offsets", null);
+			List<List<Double>> offsets = getList(ex, "bold_text_offsets", null);
 			candidateQuotes.put(text, offsets);
 		}
 
 		// Uses candidates that do match the pattern or defined offsets (filtering
 		// errors in date)
-		Entry<String, List<List<Number>>> quote = candidateQuotes.entrySet().stream()//
+		Entry<String, List<List<Double>>> quote = candidateQuotes.entrySet().stream()//
 				.filter(en -> !strIsEmpty(en.getKey()))//
 				.filter(en -> pattRefword4Check.matcher(en.getKey()).find() || !en.getValue().isEmpty()) //
 				.findFirst().orElse(null);
@@ -592,10 +611,13 @@ public class ConvKaikki2Tab {
 		String quoteText = quote.getKey();
 
 		// the quotation defines offsets for highlight, filter out invalid ones
-		List<List<Number>> hiliteOffsets = quote.getValue().stream() //
+		// and sort them
+		List<List<Double>> hiliteOffsets = quote.getValue().stream() //
 				.filter(of -> of.size() == 2)//
 				.filter(of -> of.get(0).intValue() < of.get(1).intValue()) //
 				.filter(of -> of.get(1).intValue() <= quote.getKey().length()) //
+
+				.sorted(offsetComparator)//
 				.toList();
 
 		if (hiliteOffsets.isEmpty() || (hiliteOffsets.size() > 1 && refWord.length() <= 2)) {
@@ -612,17 +634,21 @@ public class ConvKaikki2Tab {
 		} else
 
 		{
-			// insert the highling pairs
+			// insert the __highling__ pairs
 			// insert must me made from end to start to keep simple to manage indexes
+
 			var wrk = new StringBuilder(quoteText);
+			List<Double> prev = null;
 			for (int i = hiliteOffsets.size() - 1; i >= 0; --i) {
-				List<Number> pair = hiliteOffsets.get(i);
-				if (pair.size() >= 2) {
-					int beg = pair.get(0).intValue(), end = pair.get(1).intValue();
-					wrk.insert(end, closeHilite).insert(beg, openHilite);
+				List<Double> curr = hiliteOffsets.get(i);
+				if (prev != null && prev.get(0).equals(curr.get(0))) {
+					continue; // overlapping
 				}
+				int beg = curr.get(0).intValue(), end = curr.get(1).intValue();
+				wrk.insert(end, closeHilite).insert(beg, openHilite);
+				prev = curr;
 			}
-			quoteText = stripWiki(wrk.toString().replace("\n", " / "));
+			quoteText = stripWiki(true, wrk.toString()).replace("\n", " / ");
 		}
 
 		var sb = new StringBuilder();
@@ -630,9 +656,12 @@ public class ConvKaikki2Tab {
 			// add enclosing quotes if don't already exist
 			quoteText = "\"" + quoteText + "\"";
 		}
-		quoteText = "<i>" + quoteText + "</i>";
-		sb.append(" <small>(" + translateTerm("example") + ": ").append(quoteText).append(")</small>");
-		return escapeXml(sb.toString());
+		sb.append(" <small><i>(")//
+				.append(translateTerm("example") + ": ")//
+				.append(quoteText)//
+				.append(")</i></small>");
+
+		return sb.toString();
 	}
 
 	/** Build a sounds (pronunciation) map for the given sense */
@@ -722,7 +751,7 @@ public class ConvKaikki2Tab {
 	 */
 	static String translateTerm(Object term) {
 		String result = translateRaw(term);
-		return escapeXml(result);
+		return encodeEntities(false, result);
 	}
 
 	/**
@@ -735,25 +764,27 @@ public class ConvKaikki2Tab {
 		// by default return the received translateTerm
 		result = result == null ? result : result.substring(0, 1).toUpperCase() + result.substring(1);
 
-		return escapeXml(result);
+		return encodeEntities(false, result);
 	}
 
 	/** Collapses internal newlines and tabs — TSV requires one line per entry. */
 	static String sanitize(Object content) {
 		if (content == null)
 			return "";
-		return content.toString().replace("\n", " ").replace("\t", " ");
+		return content.toString()//
+				.replace("\n", " ")//
+				.replace("\t", " ");
 	}
 
 	/** Strips wiki markup: [[target|display]] → display, [[target]] → target. */
-	static String stripWiki(String wiki) {
+	static String stripWiki(boolean applyEscapes, String wiki) {
 		if (wiki == null)
 			return "";
 
 		String string = wiki.toString().stripLeading();
 		string = string.replaceAll("\\[\\[(?:[^|\\]]*\\|)?([^\\]]+)\\]\\]", "$1");
 		string = string.replace("[[", "").replace("]]", "");
-		return escapeXml(string);
+		return applyEscapes ? encodeEntities(true, string) : string;
 	}
 
 	static String getStr(Map<String, ?> map, String key) {
@@ -775,13 +806,6 @@ public class ConvKaikki2Tab {
 		} else {
 			return List.of((T) entry);
 		}
-	}
-
-	static String escapeXml(String text) {
-		if (strIsEmpty(text))
-			return "";
-
-		return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
 	}
 
 	static String stripChar(String text, char... characters) {
@@ -821,22 +845,10 @@ public class ConvKaikki2Tab {
 		return map;
 	}
 
-	/**
-	 * Returns CLI value if present, else namespaced config value, else plain config
-	 * value, else null.
-	 */
-	static String resolve(Map<String, String> cli, Properties config, String key) {
-		String v = cli.get(key);
-		if (v != null)
-			return v;
-		v = config.getProperty("kaikki2tab." + key);
-		if (v != null)
-			return v;
-		return config.getProperty(key);
-	}
+	static String usage() {
+		return """
+				Convert dictionary data from Kaikki sources to TSV
 
-	static void printUsage() {
-		err("""
 				Usage: kaikki-2-tab --in|-i <input.jsonl[.gz]> --out|-o <output.tsv|-> --lang|-l <code[,code...]>
 				                   [--embedded-defs|-e KEEP|SEPARATE|BOTH] [--config|-c <config.properties>]
 
@@ -855,152 +867,7 @@ public class ConvKaikki2Tab {
 				  kaikki-2-tab -i data/kaikki/pt-extract.jsonl -o data/out/kaikki-pt.tsv -l pt
 				  kaikki-2-tab -i data/kaikki/pt-extract.jsonl -o - -l pt -e SEPARATE | tab-2-xdxf -i - ...
 				  kaikki-2-tab -c kaikki.properties
-				""");
+				""";
 	}
 
-	// =========================================================================
-	// Minimal JSON parser
-	// =========================================================================
-
-	static class JsonParser {
-		private final String s;
-		private int pos;
-
-		JsonParser(String s) {
-			this.s = s;
-			this.pos = 0;
-		}
-
-		Object parse() {
-			skipWs();
-			if (pos >= s.length())
-				throw new RuntimeException("Unexpected end of input");
-			return switch (s.charAt(pos)) {
-			case '{' -> parseObject();
-			case '[' -> parseArray();
-			case '"' -> parseString();
-			case 't', 'f' -> parseBoolean();
-			case 'n' -> parseNull();
-			default -> parseNumber();
-			};
-		}
-
-		Map<String, Object> parseObject() {
-			expect('{');
-			var map = new LinkedHashMap<String, Object>();
-			skipWs();
-			if (peek() == '}') {
-				pos++;
-				return map;
-			}
-			while (true) {
-				skipWs();
-				String key = parseString();
-				skipWs();
-				expect(':');
-				Object val = parse();
-				map.put(key, val);
-				skipWs();
-				char c = s.charAt(pos++);
-				if (c == '}')
-					break;
-				if (c != ',')
-					throw new RuntimeException("Expected ',' or '}' at " + pos);
-			}
-			return map;
-		}
-
-		List<Object> parseArray() {
-			expect('[');
-			var list = new ArrayList<Object>();
-			skipWs();
-			if (peek() == ']') {
-				pos++;
-				return list;
-			}
-			while (true) {
-				list.add(parse());
-				skipWs();
-				char c = s.charAt(pos++);
-				if (c == ']')
-					break;
-				if (c != ',')
-					throw new RuntimeException("Expected ',' or ']' at " + pos);
-			}
-			return list;
-		}
-
-		String parseString() {
-			expect('"');
-			var sb = new StringBuilder();
-			while (pos < s.length()) {
-				char c = s.charAt(pos++);
-				if (c == '"')
-					return sb.toString();
-				if (c == '\\') {
-					char e = s.charAt(pos++);
-					switch (e) {
-					case '"' -> sb.append('"');
-					case '\\' -> sb.append('\\');
-					case '/' -> sb.append('/');
-					case 'n' -> sb.append('\n');
-					case 'r' -> sb.append('\r');
-					case 't' -> sb.append('\t');
-					case 'b' -> sb.append('\b');
-					case 'f' -> sb.append('\f');
-					case 'u' -> {
-						String hex = s.substring(pos, pos + 4);
-						pos += 4;
-						sb.append((char) Integer.parseInt(hex, 16));
-					}
-					default -> sb.append(e);
-					}
-				} else {
-					sb.append(c);
-				}
-			}
-			throw new RuntimeException("Unterminated string");
-		}
-
-		Object parseNumber() {
-			int start = pos;
-			while (pos < s.length() && "0123456789.-+eE".indexOf(s.charAt(pos)) >= 0)
-				pos++;
-			return Double.parseDouble(s.substring(start, pos));
-		}
-
-		Boolean parseBoolean() {
-			if (s.startsWith("true", pos)) {
-				pos += 4;
-				return Boolean.TRUE;
-			}
-			if (s.startsWith("false", pos)) {
-				pos += 5;
-				return Boolean.FALSE;
-			}
-			throw new RuntimeException("Invalid boolean at " + pos);
-		}
-
-		Object parseNull() {
-			if (s.startsWith("null", pos)) {
-				pos += 4;
-				return null;
-			}
-			throw new RuntimeException("Invalid null at " + pos);
-		}
-
-		void skipWs() {
-			while (pos < s.length() && Character.isWhitespace(s.charAt(pos)))
-				pos++;
-		}
-
-		void expect(char c) {
-			if (s.charAt(pos++) != c)
-				throw new RuntimeException("Expected '" + c + "' at " + (pos - 1));
-		}
-
-		char peek() {
-			return pos < s.length() ? s.charAt(pos) : 0;
-		}
-	}
 }
