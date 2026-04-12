@@ -73,7 +73,7 @@ public class ConvXdxf2Pbdic {
 		}
 
 		var cli = parseArgs(args);
-		var argsHlp = new ArgsHelper("xdxf2pcdic", er -> err(er), () -> usage());
+		var argsHlp = new ArgsHelper(TOOL, "xdxf2pcdic", er -> err(er), () -> usage());
 		String configPath = cli.get("config");
 		Properties config = argsHlp.loadProperties(configPath, true);
 		argsHlp.mergeConfig2Cli(List.of("in", "out", "lang", "langdir", "name", "merge-defs"), cli, config);
@@ -105,23 +105,15 @@ public class ConvXdxf2Pbdic {
 			name = fname.contains(".") ? fname.substring(0, fname.lastIndexOf('.')) : fname;
 		}
 
-		String mergeVal = argsHlp.requireUC(cli, "merge-defs", "--merge-defs/-m");
-		mergeVal = mergeVal.toUpperCase();
-		if (!mergeVal.equals("ALWAYS") && !mergeVal.equals("EXACT") && !mergeVal.equals("NEVER")) {
-			err(String.format("Error: -m / --merge-defs must be ALWAYS, EXACT or NEVER, got: %s", mergeVal));
+		String mergeDefs = argsHlp.requireUC(cli, "merge-defs", "--merge-defs/-m");
+		mergeDefs = mergeDefs.toUpperCase();
+		if (!mergeDefs.equals("ALWAYS") && !mergeDefs.equals("EXACT") && !mergeDefs.equals("NEVER")) {
+			err(String.format("Error: -m / --merge-defs must be ALWAYS, EXACT or NEVER, got: %s", mergeDefs));
 			System.exit(1);
 		}
-		final String joinMode = mergeVal;
-		err("Configuration:");
-		errRaw(String.format("  input   : %s", (fromStdin ? "<stdin>" : xdxfFile)));
-		errRaw(String.format("  output  : %s", dicFile));
-		errRaw(String.format("  lang    : %s", lang));
-		errRaw(String.format("  langdir : %s", langDirPath));
-		errRaw(String.format("  name    : %s", name));
-		errRaw(String.format("  merge-defs: %s", joinMode));
-		if (configPath != null)
-			errRaw(String.format("  config  : %s", configPath));
-		err("");
+
+		cli.put("merge-defs", mergeDefs);
+		argsHlp.listProperties(cli);
 
 		// 1. Language files
 		var collation = loadCollation(langDirPath.resolve("collates.txt"));
@@ -152,14 +144,14 @@ public class ConvXdxf2Pbdic {
 		for (ParsedEntry e : entries) {
 			if (!merged.isEmpty()) {
 				ParsedEntry prev = merged.get(merged.size() - 1);
-				boolean sameWord = joinMode.equals("ALWAYS") ? prev.word().equalsIgnoreCase(e.word())
+				boolean sameWord = mergeDefs.equals("ALWAYS") ? prev.word().equalsIgnoreCase(e.word())
 						: prev.word().equals(e.word());
 				if (sameWord) {
 					boolean sameDef = Arrays.equals(prev.definition(), e.definition());
-					if (!sameDef && !joinMode.equals("NEVER")) {
+					if (!sameDef && !mergeDefs.equals("NEVER")) {
 						merged.remove(merged.size() - 1);
 						// ALWAYS: keep lowercase headword; EXACT: keep first
-						String keepWord = joinMode.equals("ALWAYS")
+						String keepWord = mergeDefs.equals("ALWAYS")
 								? (prev.word().equals(prev.word().toLowerCase(java.util.Locale.ROOT)) ? prev.word()
 										: e.word())
 								: prev.word();
@@ -178,7 +170,7 @@ public class ConvXdxf2Pbdic {
 		}
 		int mergedCount = entries.size() - merged.size();
 		if (mergedCount > 0)
-			err(String.format("Merged/deduped %d entries (merge-defs=%s)", mergedCount, joinMode));
+			err(String.format("Merged/deduped %d entries (merge-defs=%s)", mergedCount, mergeDefs));
 		entries = merged;
 
 		// 5. Pack into blocks
@@ -616,8 +608,12 @@ public class ConvXdxf2Pbdic {
 
 	static final String TOOL = "xdxf-2-pbdic";
 
-	public static void err(String msg) {
-		System.err.println((msg != null && !msg.isBlank() ? TOOL + ": " : "") + msg);
+	static void err(String msg) {
+		if (msg.isBlank() || msg.startsWith(TOOL)) {
+			errRaw(msg);
+		} else {
+			errRaw(TOOL + ": " + msg);
+		}
 	}
 
 	static void errRaw(String msg) {

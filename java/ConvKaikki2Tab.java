@@ -116,7 +116,11 @@ public class ConvKaikki2Tab {
 	static final String TOOL = "kaikki-2-tab";
 
 	static void err(String msg) {
-		System.err.println(TOOL + ": " + msg);
+		if (msg.isBlank() || msg.startsWith(TOOL)) {
+			errRaw(msg);
+		} else {
+			errRaw(TOOL + ": " + msg);
+		}
 	}
 
 	static void errRaw(String msg) {
@@ -136,7 +140,7 @@ public class ConvKaikki2Tab {
 
 		// Load config file if specified
 		String configPath = cli.get("config");
-		var argsHlp = new ArgsHelper("kaikki2tab", er -> err(er), () -> usage());
+		var argsHlp = new ArgsHelper(TOOL, "kaikki2tab", er -> err(er), () -> usage());
 
 		Properties config = argsHlp.loadProperties(configPath, true);
 		argsHlp.mergeConfig2Cli(List.of("in", "out", "lang", "embedded-defs"), cli, config);
@@ -169,14 +173,7 @@ public class ConvKaikki2Tab {
 			System.exit(1);
 		}
 
-		err(TOOL);
-		errRaw(String.format("  input           : %s", inFile));
-		errRaw(String.format("  output          : %s", (toStdout ? "<stdout>" : output)));
-		errRaw(String.format("  lang            : %s -> %s", langFrom, langTo));
-		errRaw(String.format("  embedded-defs   : %s", ewArg));
-		if (configPath != null)
-			errRaw(String.format("  config          : %s", configPath));
-		errRaw("");
+		argsHlp.listProperties(cli);
 
 		// Detect gzip compression by extension
 		String fileName = inFile.getFileName().toString().toLowerCase();

@@ -79,6 +79,13 @@ public class CheckPbdic {
 	}
 
 	static void err(String msg) {
+		if (msg.isBlank() || msg.startsWith(TOOL)) {
+			errRaw(msg);
+		} else {
+			errRaw(TOOL + ": " + msg);
+		}
+	}
+	static void errRaw(String msg) {
 		System.err.println(msg);
 	}
 
@@ -89,7 +96,7 @@ public class CheckPbdic {
 			System.exit(0);
 		}
 
-		var argsHlp = new ArgsHelper("checkpbdic", er -> err(er), () -> usage());
+		var argsHlp = new ArgsHelper(TOOL, "checkpbdic", er -> err(er), () -> usage());
 		// Load config file if specified
 		Map<String, String> cli = parseArgs(args);
 		String configPath = cli.get("config");
@@ -114,15 +121,7 @@ public class CheckPbdic {
 			}
 		}
 
-		err(TOOL);
-		err("  xdxf    : " + xdxfFile);
-		err("  dic     : " + dicFile);
-		err("  lang    : " + lang);
-		err("  langdir : " + langDirPath);
-		err("  sample  : " + sample);
-		if (configPath != null)
-			err("  config  : " + configPath);
-		err("");
+		argsHlp.listProperties(cli);
 
 		// Load collation
 		var collation = loadCollation(collatesFile);
@@ -661,20 +660,20 @@ public class CheckPbdic {
 	static String usage() {
 		return TOOL + ": " + """
 				Validate a PocketBook .dic against its XDXF source
-				
+
 				Usage:
 				  linux/check-pbdic -x <xdxf> -d <dic> -l <lang> [options]
-				  
+
 				Required:
 				  -x / --xdxf      Source XDXF file
 				  -d / --dic       .dic file to validate
 				  -l / --lang      Language code (e.g. pt, en)
-				  
+
 				Optional:
 				  -n / --sample    Entries to spot-check definitions (default: 20)
 				  -D / --langdir   Language files dir (default: windows/<lang>/)"
 				  -c / --config   .properties config file (namespace: checkpbdic.*)
-				  
+
 				Exit code: 0 = all checks passed, 1 = one or more checks failed.
 				""";
 	}

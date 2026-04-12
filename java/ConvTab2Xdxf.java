@@ -104,8 +104,12 @@ public class ConvTab2Xdxf {
 
 	static final String TOOL = "tab-2-xdxf";
 
-	public static void err(String msg) {
-		System.err.println(TOOL + ": " + msg);
+	static void err(String msg) {
+		if (msg.isBlank() || msg.startsWith(TOOL)) {
+			errRaw(msg);
+		} else {
+			errRaw(TOOL + ": " + msg);
+		}
 	}
 
 	static void errRaw(String msg) {
@@ -131,7 +135,7 @@ public class ConvTab2Xdxf {
 
 		// Load config file if specified
 		String configPath = cli.get("config");
-		var argsHlp = new ArgsHelper("tab2xdxf", er -> err(er), () -> usage());
+		var argsHlp = new ArgsHelper(TOOL, "tab2xdxf", er -> err(er), () -> usage());
 		Properties config = argsHlp.loadProperties(configPath, true);
 		argsHlp.mergeConfig2Cli(List.of("in", "out", "name", "lang", "validate"), cli, config);
 
@@ -152,20 +156,7 @@ public class ConvTab2Xdxf {
 			System.exit(1);
 		}
 
-		err(TOOL);
-		errRaw(String.format("  input   : %s", (fromStdin ? "<stdin>" : input)));
-		errRaw(String.format("  output  : %s", (toStdout ? "<stdout>" : outFile)));
-		errRaw(String.format("  lang    : %s", lang639));
-		errRaw(String.format("  name    : %s", name));
-		if (!validate)
-			errRaw("  validate: no");
-		else if (toStdout)
-			errRaw("  validate: yes (via temp file)");
-		else
-			errRaw("  validate: yes");
-		if (configPath != null)
-			errRaw(String.format("  config  : %s", configPath));
-		errRaw("");
+		argsHlp.listProperties(cli);
 
 		var entries = fromStdin ? readTabfile(System.in) : readTabfile(new FileInputStream(input));
 		if (toStdout && !validate) {

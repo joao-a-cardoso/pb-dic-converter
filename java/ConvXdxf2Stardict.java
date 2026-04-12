@@ -55,7 +55,11 @@ public class ConvXdxf2Stardict {
 	static final String version = "2.4.2";
 
 	static void err(String msg) {
-		System.err.println((msg != null && !msg.isBlank() ? TOOL + ": " : "") + msg);
+		if (msg.isBlank() || msg.startsWith(TOOL)) {
+			errRaw(msg);
+		} else {
+			errRaw(TOOL + ": " + msg);
+		}
 	}
 
 	static void errRaw(String msg) {
@@ -70,7 +74,7 @@ public class ConvXdxf2Stardict {
 		}
 
 		var cli = parseArgs(args);
-		var argsHlp = new ArgsHelper("xdxf2stardict", er -> err(er), () -> usage());
+		var argsHlp = new ArgsHelper(TOOL, "xdxf2stardict", er -> err(er), () -> usage());
 		String configPath = cli.get("config");
 		Properties config = argsHlp.loadProperties(configPath, true);
 		argsHlp.mergeConfig2Cli(List.of("in", "out", "name", "merge-defs", "compress"), cli, config);
@@ -94,23 +98,14 @@ public class ConvXdxf2Stardict {
 			name = fname.contains(".") ? fname.substring(0, fname.lastIndexOf('.')) : fname;
 		}
 
-		String mergeVal = argsHlp.requireUC(cli, "merge-defs", "--merge-defs/-m");
-		if (!mergeVal.equals("ALWAYS") && !mergeVal.equals("EXACT") && !mergeVal.equals("NEVER")) {
-			err(String.format("Error: -m / --merge-defs must be ALWAYS, EXACT or NEVER, got: %s", mergeVal));
+		String mergeDefs = argsHlp.requireUC(cli, "merge-defs", "--merge-defs/-m");
+		if (!mergeDefs.equals("ALWAYS") && !mergeDefs.equals("EXACT") && !mergeDefs.equals("NEVER")) {
+			err(String.format("Error: -m / --merge-defs must be ALWAYS, EXACT or NEVER, got: %s", mergeDefs));
 			System.exit(1);
 		}
-		final String mergeMode = mergeVal;
 
-		err("Configuration:");
-		errRaw(String.format("  input            : %s", (fromStdin ? "<stdin>" : xdxfFile)));
-		errRaw(String.format("  output directory : %s", outDir));
-		errRaw(String.format("  name             : %s", name));
-		errRaw(String.format("  compress         : %s", compress));
-		errRaw(String.format("  merge-defs       : %s", mergeMode));
-		if (configPath != null) {
-			errRaw(String.format("  config           : %s", configPath));
-		}
-		err("");
+		cli.put("merge-defs", mergeDefs);
+		argsHlp.listProperties(cli);
 
 		// 1. Parse XDXF
 		err("Parsing...");
@@ -128,13 +123,13 @@ public class ConvXdxf2Stardict {
 		for (ParsedEntry e : entries) {
 			if (!merged.isEmpty()) {
 				ParsedEntry prev = merged.get(merged.size() - 1);
-				boolean sameWord = mergeMode.equals("ALWAYS") ? prev.word().equalsIgnoreCase(e.word())
+				boolean sameWord = mergeDefs.equals("ALWAYS") ? prev.word().equalsIgnoreCase(e.word())
 						: prev.word().equals(e.word());
 				if (sameWord) {
 					boolean sameDef = Arrays.equals(prev.definition(), e.definition());
-					if (!sameDef && !mergeMode.equals("NEVER")) {
+					if (!sameDef && !mergeDefs.equals("NEVER")) {
 						merged.remove(merged.size() - 1);
-						String keepWord = mergeMode.equals("ALWAYS")
+						String keepWord = mergeDefs.equals("ALWAYS")
 								? (prev.word().equals(prev.word().toLowerCase(Locale.ROOT)) ? prev.word() : e.word())
 								: prev.word();
 						merged.add(new ParsedEntry(keepWord, joinDefs(prev.definition(), e.definition())));
@@ -152,7 +147,7 @@ public class ConvXdxf2Stardict {
 		}
 		int mergedCount = entries.size() - merged.size();
 		if (mergedCount > 0) {
-			err(String.format("Merged/deduped %d entries (merge-defs=%s).", mergedCount, mergeMode));
+			err(String.format("Merged/deduped %d entries (merge-defs=%s).", mergedCount, mergeDefs));
 		}
 		entries = merged;
 

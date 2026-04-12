@@ -69,6 +69,14 @@ public class ConvStardict2Tab {
 	private static final String TOOL = "stardict-2-tab";
 
 	static void err(String msg) {
+		if (msg.isBlank() || msg.startsWith(TOOL)) {
+			errRaw(msg);
+		} else {
+			errRaw(TOOL + ": " + msg);
+		}
+	}
+
+	static void errRaw(String msg) {
 		System.err.println(msg);
 	}
 
@@ -86,7 +94,7 @@ public class ConvStardict2Tab {
 		}
 
 		var cli = parseArgs(args);
-		var argsHlp = new ArgsHelper("stardict2tab", er -> err(er), () -> usage());
+		var argsHlp = new ArgsHelper(TOOL, "stardict2tab", er -> err(er), () -> usage());
 		// Load config file if specified
 		Properties config = argsHlp.loadProperties(cli.get("config"), true);
 		argsHlp.mergeConfig2Cli(List.of("in", "out"), cli, config);
@@ -206,7 +214,7 @@ public class ConvStardict2Tab {
 	static String usage() {
 		return """
 				Convert dictionary data from StarDict to TSV.
-				
+
 				Usage: stardict-2-tab --in|-i <input.ifo> --out|-o <output.tsv|->
 				                      [--config|-c <config.properties>]
 

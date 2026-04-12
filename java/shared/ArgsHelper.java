@@ -14,17 +14,19 @@ import java.util.function.Supplier;
 
 public class ArgsHelper {
 
+	private final String toolName;
 	private final String namesspace;
 	private final Consumer<String> logger;
 	private final Supplier<String> usage;
 
-	public ArgsHelper(String namesspace, Consumer<String> logger, Supplier<String> usage) {
+	public ArgsHelper(String toolName, String namesspace, Consumer<String> logger, Supplier<String> usage) {
 		super();
 
-		if (!namesspace.endsWith(".")) {
-			namesspace = namesspace + ".";
+		if (namesspace.endsWith(".")) {
+			namesspace = namesspace.substring(0, namesspace.lastIndexOf('.') - 1);
 		}
 
+		this.toolName = toolName;
 		this.namesspace = namesspace;
 		this.logger = logger;
 		this.usage = usage;
@@ -49,12 +51,26 @@ public class ArgsHelper {
 		return props;
 	}
 
+	public void listProperties(Map<String, String> cli) {
+		logRaw("");
+		logRaw("| Configuration (%s)",  namesspace);
+		logRaw("| ");
+		int maxLen = cli.keySet().stream().mapToInt(ky -> ky.length()).max().orElse(0);
+		var format = "|   %-" + maxLen + "s : %s";
+		for (var en : cli.entrySet()) {
+			logRaw(format, en.getKey(), en.getValue());
+		}
+		logRaw("");
+	}
+
 	/** Merge props into cli (cli wins) */
 	public void mergeConfig2Cli(List<String> myArgs, Map<String, String> cli, Properties config) {
 
+		String ns = namesspace + ".";
+
 		for (String key : myArgs) {
 			if (!cli.containsKey(key)) {
-				String val = config.getProperty(namesspace + key);
+				String val = config.getProperty(ns + key);
 				if (val == null) {
 					val = config.getProperty(key);
 				}
@@ -145,7 +161,15 @@ public class ArgsHelper {
 		};
 	}
 
-	private void log(String msg, Object... objects) {
+	void log(String msg, Object... objects) {
+		if (msg.isBlank() || msg.startsWith(toolName)) {
+			logRaw(msg);
+		} else {
+			logRaw(toolName + ": " + msg, objects);
+		}
+	}
+
+	private void logRaw(String msg, Object... objects) {
 		logger.accept(String.format(msg, objects));
 	}
 
