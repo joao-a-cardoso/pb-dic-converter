@@ -1,6 +1,7 @@
 
 import java.io.BufferedReader;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -14,8 +15,10 @@ import java.util.Map;
 import java.util.Properties;
 
 import shared.ArgsHelper;
+import shared.LangHelper;
 import shared.XdxfHelper;
 import shared.XdxfHelper.XdxfEntry;
+import shared.XdxfHelper.XdxfHeader;
 
 /**
  * Converts a tabfile (TSV) dictionary to XDXF for use with
@@ -25,9 +28,10 @@ import shared.XdxfHelper.XdxfEntry;
  * <b>Usage:</b>
  * 
  * <pre>
- *   ./tab-2-xdxf --in|-i         &lt;input.tsv|-&gt;
+ *   ./tab-2-xdxf --in|-i          &lt;input.tsv|-&gt;
  *                --out|-o         &lt;output.xdxf|-&gt;
  *                --lang|-l        &lt;ISO 639-1 or 639-2&gt;
+ *                --lang-to|-t     &lt;ISO 639-1 or 639-2&gt;
  *                --name|-n        &lt;dictionary name&gt;
  *                [--validate|-v]  true/false
  *                [--config|-c     &lt;config.properties&gt;]
@@ -63,7 +67,8 @@ import shared.XdxfHelper.XdxfEntry;
  * <pre>
  *   tab2xdxf.in=data/kaikki-pt.tsv
  *   tab2xdxf.out=-
- *   tab2xdxf.lang=pt
+ *   tab2xdxf.lang-from=pt
+ *   tab2xdxf.lang-to=pt
  *   tab2xdxf.name=Dicionário PT (Kaikki)
  *   tab2xdxf.validate=false
  * </pre>
@@ -104,31 +109,27 @@ public class ConvTab2Xdxf {
 
 	static final String TOOL = "tab-2-xdxf";
 
-	static void err(String msg) {
+	static void err(String msg, Object... args) {
 		if (msg.isBlank() || msg.startsWith(TOOL)) {
-			errRaw(msg);
+			errRaw(msg, args);
 		} else {
-			errRaw(TOOL + ": " + msg);
+			errRaw(TOOL + ": " + msg, args);
 		}
 	}
 
-	static void errRaw(String msg) {
-		System.err.println(msg);
+	static void abort(String msg, Object... args) {
+		err(msg, args);
+		System.exit(1);
 	}
 
-	// ISO 639-1 → ISO 639-2 mapping
-	private static final Map<String, String> ISO1_TO_ISO2 = Map.ofEntries(Map.entry("pt", "POR"),
-			Map.entry("en", "ENG"), Map.entry("es", "SPA"), Map.entry("fr", "FRA"), Map.entry("de", "DEU"),
-			Map.entry("it", "ITA"), Map.entry("nl", "NLD"), Map.entry("ru", "RUS"), Map.entry("zh", "ZHO"),
-			Map.entry("ja", "JPN"), Map.entry("ar", "ARA"), Map.entry("pl", "POL"), Map.entry("sv", "SWE"),
-			Map.entry("da", "DAN"), Map.entry("fi", "FIN"), Map.entry("nb", "NOB"), Map.entry("cs", "CES"),
-			Map.entry("hu", "HUN"), Map.entry("ro", "RON"), Map.entry("tr", "TUR"));
+	static void errRaw(String msg, Object... args) {
+		System.err.println(String.format(msg, args));
+	}
 
 	// ── main ──────────────────────────────────────────────────────────────────
 	public static void main(String[] args) throws Exception {
 		if (args.length == 0 || Arrays.asList(args).contains("--help")) {
-			err(usage());
-			System.exit(0);
+			abort(usage());
 		}
 
 		var cli = parseArgs(args);
@@ -137,11 +138,12 @@ public class ConvTab2Xdxf {
 		String configPath = cli.get("config");
 		var argsHlp = new ArgsHelper(TOOL, "tab2xdxf", er -> err(er), () -> usage());
 		Properties config = argsHlp.loadProperties(configPath, true);
-		argsHlp.mergeConfig2Cli(List.of("in", "out", "name", "lang", "validate"), cli, config);
+		argsHlp.mergeConfig2Cli(List.of("in", "out", "name", "lang", "lang-to", "validate"), cli, config);
 
 		String input = argsHlp.require(cli, "in", "--in/-i");
 		String output = argsHlp.require(cli, "out", "--out/-o");
 		String lang = argsHlp.require(cli, "lang", "--lang/-l");
+		String langTo = argsHlp.resolve(cli, "lang-to", lang);
 		String name = argsHlp.require(cli, "name", "--name/-n");
 		Boolean validate = argsHlp.resolveBool(cli, "validate", true);
 
@@ -149,21 +151,28 @@ public class ConvTab2Xdxf {
 		boolean toStdout = "-".equals(output);
 
 		Path outFile = toStdout ? null : Path.of(output);
-		String lang639 = toIso6392(lang);
+		if (!LangHelper.validIso2(lang)) {
+			abort("Invalid ISO2 language: %s", lang);
+		}
+		if (!LangHelper.validIso2(langTo)) {
+			abort("Invalid ISO2 language: %s", langTo);
+		}
+		String lang3 = LangHelper.langIso2toIso3(lang);
+		String langTo3 = LangHelper.langIso2toIso3(langTo);
 
 		if (!fromStdin && !Files.exists(Path.of(input))) {
-			err(String.format("Error: file not found: %s", input));
-			System.exit(1);
+			abort(String.format("Error: file not found: %s", input));
 		}
 
 		argsHlp.listProperties(cli);
 
+		var header = new XdxfHeader(name, null, lang3, langTo3, null);
 		var entries = fromStdin ? readTabfile(System.in) : readTabfile(new FileInputStream(input));
 		if (toStdout && !validate) {
 			// Write to temp file, validate, then stream to stdout
 			Path tmp = Files.createTempFile("tab2xdxf-", ".xdxf");
-			try {
-				XdxfHelper.writeXdxf(entries, name, lang639, tmp, er -> err(er));
+			try (var out = new FileOutputStream(outFile.toFile())) {
+				XdxfHelper.writeXdxf(header, entries, out, er -> err(er));
 				// exits on failure, deletes tmp
 				XdxfHelper.validateXdxf(tmp, true, er -> err(er));
 				try (var in = new java.io.FileInputStream(tmp.toFile())) {
@@ -173,14 +182,15 @@ public class ConvTab2Xdxf {
 				Files.deleteIfExists(tmp);
 			}
 		} else if (toStdout) {
-			XdxfHelper.writeXdxf(entries, name, lang639, System.out);
-		} else {
-			XdxfHelper.writeXdxf(entries, name, lang639, outFile, er -> err(er));
-			if (validate) {
-				// exits on failure, deletes tmp
-				XdxfHelper.validateXdxf(outFile, true, er -> err(er));
+			XdxfHelper.writeXdxf(header, entries, System.out, er -> err(er));
+		} else
+			try (var out = Files.newOutputStream(outFile)) {
+				XdxfHelper.writeXdxf(header, entries, out, er -> err(er));
+				if (validate) {
+					// exits on failure, deletes tmp
+					XdxfHelper.validateXdxf(outFile, true, er -> err(er));
+				}
 			}
-		}
 	}
 
 	// --- Tabfile reader ---
@@ -208,16 +218,6 @@ public class ConvTab2Xdxf {
 
 	// --- Helpers ---
 
-	static String toIso6392(String lang) {
-		if (lang == null)
-			return "ENG";
-		if (lang.length() == 2) {
-			String mapped = ISO1_TO_ISO2.get(lang.toLowerCase());
-			return mapped != null ? mapped : lang.toUpperCase();
-		}
-		return lang.toUpperCase();
-	}
-
 	static Map<String, String> parseArgs(String[] args) {
 		var map = new LinkedHashMap<String, String>();
 		for (int i = 0; i < args.length; i++) {
@@ -225,7 +225,8 @@ public class ConvTab2Xdxf {
 			case "--config", "-c" -> map.put("config", args[++i]);
 			case "--in", "-i" -> map.put("in", args[++i]);
 			case "--out", "-o" -> map.put("out", args[++i]);
-			case "--lang", "-l" -> map.put("lang", args[++i]);
+			case "--lang", "-l" -> map.put("lang-from", args[++i]);
+			case "--lang-to", "-t" -> map.put("lang-from", args[++i]);
 			case "--name", "-n" -> map.put("name", args[++i]);
 			case "--validate", "-v" -> map.put("validate", args[++i]);
 			default -> err(String.format("Warning: unknown argument '%s', ignoring.", args[i]));
@@ -238,15 +239,16 @@ public class ConvTab2Xdxf {
 		return """
 				Convert dictionary data from TSV to XDXF.
 
-				Usage: tab-2-xdxf --in|-i  <input.tsv|->   --out|-o <output.xdxf|->
-				                   --lang|-l <ISO 639-1 or 639-2>
-				                   --name|-n <dictionary name>
-				                   [--validate|-v] <true/false>
-				                   [--config|-c <config.properties>]
-
-				--in|-i        Input tabfile or - for stdin.
-				--out|-o       Output XDXF file or - for stdout. Stdout output validates via a temp file.
-				--validate|-v  If false skip XML validation.
+				Usage: tab-2-xdxf --in|-i         <input.tsv|->
+				                  --out|-o        <output.xdxf|->
+				                  --lang|-l       <ISO 639-1 or 639-2>
+				                  --lang-to|-t    <ISO 639-1 or 639-2> defaults to '--lang'
+				                  --name|-n       <dictionary name>
+				                  [--validate|-v] <true/false> default is true]
+				                  [--config|-c    <config.properties>]
+				                              --in|-i         Input tabfile or - for stdin.
+				                              --out|-o        Output XDXF file or - for stdout. Stdout output validates via a temp file.
+				                              --validate|-v   If false skip XML validation.
 
 				Examples:
 				  tab-2-xdxf -i data/out/kaikki-pt.tsv -o data/out/kaikki-pt.xdxf -l pt -n "Dicionário PT"

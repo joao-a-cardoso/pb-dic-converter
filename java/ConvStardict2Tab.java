@@ -68,16 +68,21 @@ public class ConvStardict2Tab {
 
 	private static final String TOOL = "stardict-2-tab";
 
-	static void err(String msg) {
+	static void err(String msg, Object... args) {
 		if (msg.isBlank() || msg.startsWith(TOOL)) {
-			errRaw(msg);
+			errRaw(msg, args);
 		} else {
-			errRaw(TOOL + ": " + msg);
+			errRaw(TOOL + ": " + msg, args);
 		}
 	}
 
-	static void errRaw(String msg) {
-		System.err.println(msg);
+	static void abort(String msg, Object... args) {
+		err(msg, args);
+		System.exit(1);
+	}
+
+	static void errRaw(String msg, Object... args) {
+		System.err.println(String.format(msg, args));
 	}
 
 	record Entry(String word, String definition) {
@@ -89,8 +94,7 @@ public class ConvStardict2Tab {
 	// ── main ──────────────────────────────────────────────────────────────────
 	public static void main(String[] args) throws Exception {
 		if (args.length == 0 || Arrays.asList(args).contains("--help")) {
-			err(usage());
-			System.exit(0);
+			abort(usage());
 		}
 
 		var cli = parseArgs(args);
@@ -106,17 +110,10 @@ public class ConvStardict2Tab {
 
 		Path inFile = Path.of(input);
 		if (!Files.exists(inFile)) {
-			err("Error: file not found: " + inFile);
-			System.exit(1);
+			abort("Error: file not found: " + inFile);
 		}
 
-		String cp = cli.get("config");
-		err(TOOL);
-		err("  input   : " + inFile);
-		err("  output  : " + (toStdout ? "<stdout>" : output));
-		if (cp != null)
-			err("  config  : " + cp);
-		err("");
+		argsHlp.listProperties(cli);
 
 		var entries = readStarDict(inFile);
 

@@ -10,7 +10,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import java.util.Random;
 import java.util.TreeMap;
 import java.util.zip.Inflater;
 
@@ -92,8 +91,7 @@ public class CheckPbdic {
 	// ── main ──────────────────────────────────────────────────────────────────
 	public static void main(String[] args) throws Exception {
 		if (args.length == 0 || Arrays.asList(args).contains("--help")) {
-			err(usage());
-			System.exit(0);
+			fail(usage());
 		}
 
 		var argsHlp = new ArgsHelper(TOOL, "checkpbdic", er -> err(er), () -> usage());
@@ -116,8 +114,7 @@ public class CheckPbdic {
 
 		for (Path p : List.of(xdxfFile, dicFile, collatesFile)) {
 			if (!Files.exists(p)) {
-				err("Error: file not found: " + p);
-				System.exit(1);
+				fail("Error: file not found: " + p);
 			}
 		}
 
@@ -210,7 +207,6 @@ public class CheckPbdic {
 
 		// Pick a deterministic random sample from XDXF entries that exist in dic
 		var candidates = xdxfEntries.stream().filter(e -> dicMap.containsKey(e.word())).toList();
-		var rng = new Random(42);
 		int step = Math.max(1, candidates.size() / sample);
 		int checked = 0, defMismatches = 0;
 		var mismatchExamples = new ArrayList<String>();

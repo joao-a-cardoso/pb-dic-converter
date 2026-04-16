@@ -32,6 +32,7 @@ import java.util.zip.GZIPInputStream;
 
 import shared.ArgsHelper;
 import shared.JsonParser;
+import shared.LangHelper;
 
 /**
  * Converts a Kaikki JSONL dictionary dump to a tabfile (TSV) for use with
@@ -115,25 +116,27 @@ public class ConvKaikki2Tab {
 
 	static final String TOOL = "kaikki-2-tab";
 
-	static void err(String msg) {
+	static void err(String msg, Object... args) {
 		if (msg.isBlank() || msg.startsWith(TOOL)) {
-			errRaw(msg);
+			errRaw(msg, args);
 		} else {
-			errRaw(TOOL + ": " + msg);
+			errRaw(TOOL + ": " + msg, args);
 		}
 	}
 
-	static void errRaw(String msg) {
-		System.err.println(msg);
+	static void abort(String msg, Object... args) {
+		err(msg, args);
+		System.exit(1);
 	}
 
-	static String langFrom = null, langTo = null;
+	static void errRaw(String msg, Object... args) {
+		System.err.println(String.format(msg, args));
+	}
 
 	// ── main ──────────────────────────────────────────────────────────────────
 	public static void main(String[] args) throws Exception {
 		if (args.length == 0 || Arrays.asList(args).contains("--help")) {
-			err(usage());
-			System.exit(0);
+			abort(usage());
 		}
 
 		var cli = parseArgs(args);
@@ -143,16 +146,23 @@ public class ConvKaikki2Tab {
 		var argsHlp = new ArgsHelper(TOOL, "kaikki2tab", er -> err(er), () -> usage());
 
 		Properties config = argsHlp.loadProperties(configPath, true);
-		argsHlp.mergeConfig2Cli(List.of("in", "out", "lang", "embedded-defs"), cli, config);
+		argsHlp.mergeConfig2Cli(List.of("in", "out", "lang", "lang-to", "embedded-defs"), cli, config);
 
 		String input = argsHlp.require(cli, "in", "--in/-i");
 		String output = argsHlp.require(cli, "out", "--out/-o");
-		String langArg = argsHlp.require(cli, "lang", "--lang/-l");
+		String lang = argsHlp.require(cli, "lang", "--lang/-l");
+		String langTo = argsHlp.resolve(cli, "lang-to", lang);
+
+		if (!LangHelper.validIso2(lang)) {
+			abort("Invalid ISO2 language: %s", lang);
+		}
+		if (!LangHelper.validIso2(langTo)) {
+			abort("Invalid ISO2 language: %s", langTo);
+		}
 
 		String ewArg = argsHlp.resolveUC(cli, "embedded-defs", "BOTH");
 		if (!ewArg.equals("KEEP") && !ewArg.equals("SEPARATE") && !ewArg.equals("BOTH")) {
-			err(String.format("Error: --embedded-defs must be KEEP, SEPARATE or BOTH, got: %s", ewArg));
-			System.exit(1);
+			abort(String.format("Error: --embedded-defs must be KEEP, SEPARATE or BOTH, got: %s", ewArg));
 		}
 
 		final boolean emitEmbedded = ewArg.equals("KEEP") || ewArg.equals("BOTH");
@@ -160,17 +170,10 @@ public class ConvKaikki2Tab {
 
 		boolean toStdout = "-".equals(output);
 
-		{
-			var arrLangs = langArg.toUpperCase().split(",");
-			langFrom = arrLangs[0];
-			langTo = arrLangs.length == 1 ? langFrom : arrLangs[1];
-		}
-
 		Path inFile = Path.of(input);
 
 		if (!Files.exists(inFile)) {
-			err(String.format("Error: file not found: %s", inFile));
-			System.exit(1);
+			abort(String.format("Error: file not found: %s", inFile));
 		}
 
 		argsHlp.listProperties(cli);
@@ -180,6 +183,7 @@ public class ConvKaikki2Tab {
 		boolean isGzip = fileName.endsWith(".gz");
 
 		int count = 0, filtered = 0, skipped = 0, duplicates = 0;
+		List<String> lstFilteredLang = new ArrayList<>();
 		// Key = "word\tdef" — only drop entries where both headword AND content are
 		// identical
 		var seenEntries = new HashSet<String>();
@@ -202,8 +206,12 @@ public class ConvKaikki2Tab {
 					Map<String, ?> entry = new JsonParser(line).parseObject();
 
 					// Filter by language
-					if (!langFrom.equalsIgnoreCase(getStr(entry, "lang_code"))) {
+					String wordLang = getStr(entry, "lang_code");
+					if (!lang.equalsIgnoreCase(wordLang)) {
 						filtered++;
+						if (!lstFilteredLang.contains(wordLang)) {
+							lstFilteredLang.add(wordLang == null ? "<null>" : wordLang.toLowerCase());
+						}
 						continue;
 					}
 
@@ -214,7 +222,7 @@ public class ConvKaikki2Tab {
 					}
 
 					// Main entry
-					String def = buildDefinition(word, entry, emitEmbedded);
+					String def = buildDefinition(word, langTo, entry, emitEmbedded);
 					if (!strIsEmpty(def)) {
 						String lin = word + "\t" + sanitize(def);
 						seenWords.add(word);
@@ -266,13 +274,15 @@ public class ConvKaikki2Tab {
 		} // main try
 
 		err(String.format(
-				"%d entries written, %d filtered (wrong language), %d exact-content duplicates dropped (%d headwords affected), %d skipped (blank/error).",
-				count, filtered, duplicates, affectedWords.size(), skipped));
+				"%d entries written, %d filtered (wrong languages: %s), %d exact-content duplicates dropped (%d headwords affected), %d skipped (blank/error).",
+				count, filtered, lstFilteredLang.size(), duplicates, affectedWords.size(), skipped));
 	}
 
 	// --- Definition builder ---
 
-	static String buildDefinition(String word, Map<String, ?> entry, boolean emitEmbedded) {
+	static String buildDefinition(String word, String langTo, Map<String, ?> entry, boolean emitEmbedded) {
+
+		// TODO Filter by langTo
 
 		boolean keepExpressionsWithEmptyContent = true;
 
@@ -849,20 +859,20 @@ public class ConvKaikki2Tab {
 				Usage: kaikki-2-tab --in|-i <input.jsonl[.gz]> --out|-o <output.tsv|-> --lang|-l <code[,code...]>
 				                   [--embedded-defs|-e KEEP|SEPARATE|BOTH] [--config|-c <config.properties>]
 
-				--in  accepts .jsonl or .jsonl.gz files.
-				--out accepts a file path or - for stdout.
-				--lang accepts one or more comma-separated ISO 639-1 language codes."
-				       First language shall be the 'From', the second shall be the 'To'.
-				       By default 'To' shall be same 'From'.
+				--in            accepts .jsonl or .jsonl.gz files.
+				--out           accepts a file path or - for stdout.
+				--lang          accepts 'main' language as ISO 639-1 language codes."
+				--lang-to       accepts 'from' language as ISO 639-1 language codes, default to 'lang'"
 				--embedded-defs controls how expressions are emitted (default: BOTH):
 				    KEEP     — expressions appear only embedded inside the parent word's definition.
 				    SEPARATE — expressions are emitted only as their own standalone entries.
 				    BOTH     — both embedded and standalone (default).
+
 				CLI arguments override values from the config file (namespace: kaikki2tab.*).
 
 				Example:
 				  kaikki-2-tab -i data/kaikki/pt-extract.jsonl -o data/out/kaikki-pt.tsv -l pt
-				  kaikki-2-tab -i data/kaikki/pt-extract.jsonl -o - -l pt -e SEPARATE | tab-2-xdxf -i - ...
+				  kaikki-2-tab -i data/kaikki/pt-extract.jsonl -o - -l pt -t pt -e SEPARATE | tab-2-xdxf -i - ...
 				  kaikki-2-tab -c kaikki.properties
 				""";
 	}

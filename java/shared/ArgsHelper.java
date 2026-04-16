@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -52,12 +53,13 @@ public class ArgsHelper {
 	}
 
 	public void listProperties(Map<String, String> cli) {
+		var ord = new LinkedHashMap<>(cli); // ordered
 		logRaw("");
-		logRaw("| Configuration (%s)",  namesspace);
+		logRaw("| Configuration (%s)", namesspace);
 		logRaw("| ");
-		int maxLen = cli.keySet().stream().mapToInt(ky -> ky.length()).max().orElse(0);
+		int maxLen = ord.keySet().stream().mapToInt(ky -> ky.length()).max().orElse(0);
 		var format = "|   %-" + maxLen + "s : %s";
-		for (var en : cli.entrySet()) {
+		for (var en : ord.entrySet()) {
 			logRaw(format, en.getKey(), en.getValue());
 		}
 		logRaw("");
@@ -123,7 +125,7 @@ public class ArgsHelper {
 	}
 
 	public String resolve(Map<String, String> cli, String key, String def) {
-		return cli.getOrDefault(key, def);
+		return cli.computeIfAbsent(key, k -> def);
 	}
 
 	public String resolveUC(Map<String, String> cli, String key, String def) {
@@ -133,8 +135,10 @@ public class ArgsHelper {
 
 	public Integer resolveInt(Map<String, String> cli, String key, Integer def) {
 		String val = resolve(cli, key, null);
-		if (val == null || val.isBlank())
+		if (val == null || val.isBlank()) {
+			cli.put(key, def == null ? null : def.toString());
 			return def;
+		}
 
 		try {
 			return Integer.parseInt(val);
@@ -147,8 +151,10 @@ public class ArgsHelper {
 
 	public Boolean resolveBool(Map<String, String> cli, String key, Boolean def) {
 		String val = resolve(cli, key, null);
-		if (val == null || val.isBlank())
+		if (val == null || val.isBlank()) {
+			cli.put(key, def == null ? null : def.toString());
 			return def;
+		}
 
 		return switch (val.toLowerCase()) {
 		case "true" -> true;
