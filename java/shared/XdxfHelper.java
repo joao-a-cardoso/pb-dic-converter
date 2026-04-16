@@ -12,10 +12,11 @@ import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
-import java.util.function.Function;
 
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
@@ -26,25 +27,79 @@ import org.xml.sax.helpers.DefaultHandler;
 
 public class XdxfHelper {
 
-	// --- XDXF writer ---
+	// -- Data Structures -----------------------
 
-	public static void writeXdxf(List<XdxfEntry> entries, String bookname, String lang, Path outFile,
-			Consumer<String> logger) throws Exception {
-		try (var out = new FileOutputStream(outFile.toFile())) {
-			writeXdxf(entries, bookname, lang, out);
+	public record XdxfHeader(String name, String description, String lang, String langTo, String format) {
+		public XdxfHeader() {
+			this(null, null, null, null, null);
 		}
+
+		public XdxfHeader withName(String val) {
+			return new XdxfHeader(val, this.description, this.lang, this.langTo, format);
+		}
+
+		public XdxfHeader withDescription(String val) {
+			return new XdxfHeader(this.name, val, this.lang, this.langTo, format);
+		}
+
+		public XdxfHeader withLang(String val) {
+			return new XdxfHeader(this.name, this.description, val, this.langTo, format);
+		}
+
+		public XdxfHeader withLangTo(String val) {
+			return new XdxfHeader(name, description, lang, val, format);
+		}
+
+		public XdxfHeader withFormat(String val) {
+			return new XdxfHeader(name, description, lang, langTo, val);
+		}
+
+		public String langTo() {
+			return (langTo == null || langTo.isBlank()) ? lang() : langTo;
+		}
+
+		public String description() {
+			return (description == null || description.isBlank()) ? name() : description;
+		}
+	}
+
+	public record XdxfEntry(String word, String definition) {
+	}
+
+	public record ParsedEntry(String word, byte[] definition) {
+		public int serialisedLength() {
+			return 2 + word.getBytes(StandardCharsets.UTF_8).length + 1 + definition.length + 1;
+		}
+	}
+
+	@FunctionalInterface
+	public interface HtmlCompiler {
+		byte[] compile(CharSequence cseq);
+	}
+
+	// -- XDXF Processing Methods --
+
+	/**
+	 * XDXF Writer method
+	 */
+	public static void writeXdxf(XdxfHeader header, List<XdxfEntry> entries, Path outFile, Consumer<String> logger)
+			throws Exception {
 		logger.accept(String.format("%d entries written to %s.", entries.size(), outFile));
 	}
 
-	public static void writeXdxf(List<XdxfEntry> entries, String bookname, String lang, OutputStream stream)
-			throws Exception {
+	public static void writeXdxf(XdxfHeader header, List<XdxfEntry> entries, OutputStream stream,
+			Consumer<String> logger) throws Exception {
+		header = header.withFormat("visual"); // Constant, for now
+
+		@SuppressWarnings("unused")
 		int count = 0;
 		try (var writer = new BufferedWriter(new OutputStreamWriter(stream, StandardCharsets.UTF_8))) {
 
 			writer.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
-			writer.write("<xdxf lang_from=\"" + lang + "\" lang_to=\"" + lang + "\" format=\"visual\">\n");
-			writer.write("<full_name>" + encodeEntities(false, bookname) + "</full_name>\n");
-			writer.write("<description>" + encodeEntities(false, bookname) + "</description>\n");
+			writer.write("<xdxf lang_from=\"" + header.lang() + "\" lang_to=\"" + header.langTo() + "\" format=\""
+					+ header.format() + "\">\n");
+			writer.write("<full_name>" + encodeEntities(false, header.name()) + "</full_name>\n");
+			writer.write("<description>" + encodeEntities(false, header.description()) + "</description>\n");
 
 			for (XdxfEntry entry : entries) {
 				String def = cleanHtml(entry.definition());
@@ -56,15 +111,13 @@ public class XdxfHelper {
 			}
 			writer.write("</xdxf>\n");
 		}
-	}
 
-	public record XdxfEntry(String word, String definition) {
-	}
-
-	public record ParsedEntry(String word, byte[] definition) {
-		public int serialisedLength() {
-			return 2 + word.getBytes(StandardCharsets.UTF_8).length + 1 + definition.length + 1;
+		if (stream instanceof @SuppressWarnings("unused") FileOutputStream fileStream) {
+			logger.accept(String.format("%d entries written to %s.", entries.size(), "file"));
+		} else {
+			logger.accept(String.format("%d entries written to %s.", entries.size(), "output"));
 		}
+
 	}
 
 	/** Validate Xdxf content */
@@ -119,18 +172,24 @@ public class XdxfHelper {
 	 * Parses Xdxf data from the given {@link InputStream} into a lost of
 	 * {@link ParsedEntry}
 	 */
-	public static List<ParsedEntry> parseXdxf(Function<CharSequence, byte[]> funcHtml2bytes, InputStream stream)
-			throws Exception {
+	public static int parseXdxf(InputStream stream, HtmlCompiler compilerHtml2bytes,
+			Consumer<XdxfHeader> consumerHeader, Consumer<ParsedEntry> consumerEntries) throws Exception {
+
+		enum PState {
+			AR, K, HDR
+		}
 
 		var factory = SAXParserFactory.newInstance();
 		factory.setValidating(false);
 		factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
 
-		var entries = new ArrayList<ParsedEntry>();
+		var atmHeader = new AtomicReference<XdxfHeader>(new XdxfHeader());
+		var atmCountEntries = new AtomicInteger(0);
 		var headwords = new ArrayList<String>();
-		var defRaw = new StringBuilder();
-		var kBuf = new StringBuilder();
-		var state = new boolean[2]; // [0]=inAr, [1]=inK
+		var bufHdr = new StringBuilder();
+		var bufDef = new StringBuilder();
+		var bufKey = new StringBuilder();
+		var states = new HashSet<PState>();
 
 		SAXParser saxParser = factory.newSAXParser();
 		saxParser.setProperty("http://www.oracle.com/xml/jaxp/properties/maxGeneralEntitySizeLimit", 100_000_000);
@@ -140,18 +199,33 @@ public class XdxfHelper {
 			@Override
 			public void startElement(String u, String l, String qName, Attributes a) {
 				switch (qName.toLowerCase()) {
+				case "xdxf" -> {
+					var wrk = atmHeader.get();
+					wrk = wrk.withLang(a.getValue("lang_from"));
+					wrk = wrk.withLangTo(a.getValue("lang_to"));
+					wrk = wrk.withFormat(a.getValue("format"));
+					atmHeader.set(wrk);
+				}
+				case "full_name" -> {
+					states.add(PState.HDR);
+					bufHdr.setLength(0);
+				}
+				case "description" -> {
+					states.add(PState.HDR);
+					bufHdr.setLength(0);
+				}
 				case "ar" -> {
-					state[0] = true;
+					states.add(PState.AR);
 					headwords.clear();
-					defRaw.setLength(0);
+					bufDef.setLength(0);
 				}
 				case "k" -> {
-					state[1] = true;
-					kBuf.setLength(0);
+					states.add(PState.K);
+					bufKey.setLength(0);
 				}
 				default -> {
-					if (state[0] && !state[1])
-						defRaw.append('<').append(qName.toLowerCase()).append('>');
+					if (states.contains(PState.AR) && !states.contains(PState.K))
+						bufDef.append('<').append(qName.toLowerCase()).append('>');
 				}
 				}
 			}
@@ -159,33 +233,47 @@ public class XdxfHelper {
 			@Override
 			public void endElement(String u, String l, String qName) {
 				switch (qName.toLowerCase()) {
+				case "full_name" -> {
+					atmHeader.set(atmHeader.get().withName(bufHdr.toString()));
+					states.remove(PState.HDR);
+				}
+				case "description" -> {
+					atmHeader.set(atmHeader.get().withDescription(bufHdr.toString()));
+					states.remove(PState.HDR);
+				}
 				case "ar" -> {
-					if (!headwords.isEmpty() && defRaw.length() > 0) {
-						byte[] def = funcHtml2bytes.apply(defRaw.toString().trim());
-						for (String w : headwords)
-							if (!w.isBlank())
-								entries.add(new ParsedEntry(w.trim(), def));
+					if (!headwords.isEmpty() && bufDef.length() > 0) {
+						byte[] def = compilerHtml2bytes.compile(bufDef.toString().trim());
+						for (String hw : headwords)
+							if (!hw.isBlank()) {
+								// give the entry to the caller for it to process
+								consumerEntries.accept(new ParsedEntry(hw.trim(), def));
+								atmCountEntries.incrementAndGet();
+							}
 					}
-					state[0] = false;
+					states.remove(PState.AR); 
 				}
 				case "k" -> {
-					headwords.add(kBuf.toString());
-					state[1] = false;
+					headwords.add(bufKey.toString());
+					states.remove(PState.K); 
 				}
 				default -> {
-					if (state[0] && !state[1])
-						defRaw.append("</").append(qName.toLowerCase()).append('>');
+					if (states.contains(PState.AR) && !states.contains(PState.K)) {
+						bufDef.append("</").append(qName.toLowerCase()).append('>');
+					}
 				}
 				}
 			}
 
 			@Override
 			public void characters(char[] ch, int start, int length) {
-				if (state[1])
-					kBuf.append(ch, start, length);
-				else if (state[0]) {
+				if (states.contains(PState.HDR)) { 
+					bufHdr.append(ch, start, length);
+				} else if (states.contains(PState.K)) {
+					bufKey.append(ch, start, length);
+				} else if (states.contains(PState.AR)) {
 					String t = new String(ch, start, length);
-					defRaw.append(t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"));
+					bufDef.append(t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"));
 				}
 			}
 
@@ -194,7 +282,12 @@ public class XdxfHelper {
 				return new InputSource(new StringReader(""));
 			}
 		});
-		return entries;
+
+		if (consumerHeader != null) {
+			consumerHeader.accept(atmHeader.get());
+		}
+
+		return atmCountEntries.intValue();
 	}
 
 	static String autoCloseTags(String def) {
@@ -226,4 +319,5 @@ public class XdxfHelper {
 		def = sb.toString();
 		return def;
 	}
+
 }

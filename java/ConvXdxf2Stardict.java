@@ -2,7 +2,6 @@ import static shared.XdxfHelper.parseXdxf;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -19,12 +18,11 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.stream.Collectors;
-import java.util.stream.StreamSupport;
-import java.util.zip.GZIPOutputStream;
 
 import shared.ArgsHelper;
 import shared.DictzipUtil;
 import shared.XdxfHelper.ParsedEntry;
+import shared.XdxfHelper.XdxfHeader;
 
 /**
  * xdxf-2-stardict — convert an XDXF dictionary to StarDict format.
@@ -54,23 +52,27 @@ public class ConvXdxf2Stardict {
 
 	static final String version = "2.4.2";
 
-	static void err(String msg) {
+	static void err(String msg, Object... args) {
 		if (msg.isBlank() || msg.startsWith(TOOL)) {
-			errRaw(msg);
+			errRaw(msg, args);
 		} else {
-			errRaw(TOOL + ": " + msg);
+			errRaw(TOOL + ": " + msg, args);
 		}
 	}
 
-	static void errRaw(String msg) {
-		System.err.println(msg);
+	static void abort(String msg, Object... args) {
+		err(msg, args);
+		System.exit(1);
+	}
+
+	static void errRaw(String msg, Object... args) {
+		System.err.println(String.format(msg, args));
 	}
 
 	// ── main ──────────────────────────────────────────────────────────────────
 	public static void main(String[] args) throws Exception {
 		if (args.length == 0 || Arrays.asList(args).contains("--help")) {
-			err(usage());
-			System.exit(0);
+			abort(usage());
 		}
 
 		var cli = parseArgs(args);
@@ -81,27 +83,20 @@ public class ConvXdxf2Stardict {
 
 		String inPath = argsHlp.require(cli, "in", "--in/-i");
 		String outDir = argsHlp.require(cli, "out", "--out/-o");
-		String name = argsHlp.resolve(cli, "name", "--name/-n");
+		String name = argsHlp.resolve(cli, "name", null);
+		String description = null; // will be discovered later on
 		boolean compress = argsHlp.requireBool(cli, "compress", "--compress/-z");
 
 		boolean fromStdin = "-".equals(inPath);
 		Path xdxfFile = fromStdin ? null : Path.of(inPath);
 
 		if (!fromStdin && !Files.exists(xdxfFile)) {
-			err(String.format("Error: input file not found: %s", xdxfFile));
-			System.exit(1);
-		}
-
-		if (name == null) {
-			// TODO; read the name from the XDXF content
-			String fname = outDir;
-			name = fname.contains(".") ? fname.substring(0, fname.lastIndexOf('.')) : fname;
+			abort(String.format("Error: input file not found: %s", xdxfFile));
 		}
 
 		String mergeDefs = argsHlp.requireUC(cli, "merge-defs", "--merge-defs/-m");
 		if (!mergeDefs.equals("ALWAYS") && !mergeDefs.equals("EXACT") && !mergeDefs.equals("NEVER")) {
-			err(String.format("Error: -m / --merge-defs must be ALWAYS, EXACT or NEVER, got: %s", mergeDefs));
-			System.exit(1);
+			abort(String.format("Error: -m / --merge-defs must be ALWAYS, EXACT or NEVER, got: %s", mergeDefs));
 		}
 
 		cli.put("merge-defs", mergeDefs);
@@ -109,8 +104,30 @@ public class ConvXdxf2Stardict {
 
 		// 1. Parse XDXF
 		err("Parsing...");
-		InputStream input = fromStdin ? System.in : new FileInputStream(xdxfFile.toFile());
-		List<ParsedEntry> entries = parseXdxf(ConvXdxf2Stardict::htmlToSdic, input);
+		var header = new XdxfHeader[1];
+		var entries = new ArrayList<ParsedEntry>();
+		try (InputStream input = fromStdin ? System.in : Files.newInputStream(xdxfFile)) {
+			int count = parseXdxf(input, //
+					ConvXdxf2Stardict::htmlToSdic, //
+					hdr -> header[0] = hdr, //
+					entries::add);
+			err(String.format("read %d entries.", count));
+		}
+
+		// Use data from the header
+		if (header[0] != null) {
+			if (name == null || name.isBlank()) {
+				name = header[0].name();
+			}
+			description = header[0].description();
+		}
+
+		// there is no name, derive it from the file name
+		if (name == null) {
+			// TODO; read the name from the XDXF content
+			String fname = outDir;
+			name = fname.contains(".") ? fname.substring(0, fname.lastIndexOf('.')) : fname;
+		}
 
 		// 2. Sort alphabetically (case-insensitive)
 		err("Sorting...");
@@ -157,7 +174,7 @@ public class ConvXdxf2Stardict {
 		Files.createDirectories(outPath);
 		// remove existing files
 		Files.list(outPath).forEach(pa -> pa.toFile().delete());
-		writeStardict(compress, entries, outPath, name);
+		writeStardict(compress, entries, outPath, name, description);
 
 		String extensions = Files.list(outPath) //
 				.map(pa -> "." + pa.getFileName().toString().split("\\.", 2)[1])//
@@ -175,8 +192,12 @@ public class ConvXdxf2Stardict {
 
 	// ── StarDict writer ───────────────────────────────────────────────────────
 
-	static void writeStardict(boolean compress, List<ParsedEntry> entries, Path outPath, String name)
-			throws IOException {
+	static void writeStardict(boolean compress, List<ParsedEntry> entries, Path outPath, String name,
+			String description) throws IOException {
+
+		if (description == null || description.isBlank()) {
+			description = name;
+		}
 
 		String filename = "stardict";
 
@@ -219,6 +240,7 @@ public class ConvXdxf2Stardict {
 			ifo.append("wordcount=").append(entries.size()).append("\n");
 			ifo.append("idxfilesize=").append(idxStrm.size()).append("\n");
 			ifo.append("bookname=").append(name).append("\n");
+			ifo.append("description=").append(description).append("\n");
 			ifo.append("sametypesequence=h\n");
 			ifoStrm.write(ifo.toString().getBytes(StandardCharsets.UTF_8));
 		}
@@ -295,7 +317,7 @@ public class ConvXdxf2Stardict {
 				  -m / --merge-defs  ALWAYS — headword match is case-insensitive; merge different defs, drop identical
 				                     EXACT  — headword match is case-sensitive;   merge different defs, drop identical
 				                     NEVER  — never merge; only drop byte-identical duplicates
-				  -z / --compress     true - dictoinary data is compress; false - is not compressed
+				  -z / --compress     true - dictionary data is compress; false - is not compressed
 
 				Optional:
 				  -n / --name        Dictionary title (default to output file without extension. TODO: Read the name from the input XDXF content)

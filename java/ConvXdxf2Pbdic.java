@@ -3,7 +3,6 @@ import static shared.XmlHelper.decodeEntities;
 
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -25,6 +24,7 @@ import shared.ArgsHelper;
 import shared.Constants;
 import shared.XdxfHelper;
 import shared.XdxfHelper.ParsedEntry;
+import shared.XdxfHelper.XdxfHeader;
 
 /**
  * xdxf-2-pbdic — convert an XDXF dictionary to PocketBook's native .dic (SDIC)
@@ -68,8 +68,7 @@ public class ConvXdxf2Pbdic {
 	// ── main ──────────────────────────────────────────────────────────────────
 	public static void main(String[] args) throws Exception {
 		if (args.length == 0 || Arrays.asList(args).contains("--help")) {
-			err(usage());
-			System.exit(0);
+			abort(usage());
 		}
 
 		var cli = parseArgs(args);
@@ -85,13 +84,12 @@ public class ConvXdxf2Pbdic {
 		String name = argsHlp.resolve(cli, "name", null);
 
 		boolean fromStdin = "-".equals(inPath);
-		Path xdxfFile = fromStdin ? null : Path.of(inPath);
+		Path xdxfPath = fromStdin ? null : Path.of(inPath);
 		Path dicFile = Path.of(outPath);
 		Path langDirPath = Path.of(langDir);
 
-		if (!fromStdin && !Files.exists(xdxfFile)) {
-			err(String.format("Error: input file not found: %s", xdxfFile));
-			System.exit(1);
+		if (!fromStdin && !Files.exists(xdxfPath)) {
+			abort(String.format("Error: input file not found: %s", xdxfPath));
 		}
 		if (!Files.isDirectory(langDirPath)) {
 			err(String.format("Error: language directory not found: %s", langDirPath));
@@ -99,17 +97,10 @@ public class ConvXdxf2Pbdic {
 			System.exit(1);
 		}
 
-		if (name == null) {
-			// TODO; read the name from the XDXF content
-			String fname = outPath;
-			name = fname.contains(".") ? fname.substring(0, fname.lastIndexOf('.')) : fname;
-		}
-
 		String mergeDefs = argsHlp.requireUC(cli, "merge-defs", "--merge-defs/-m");
 		mergeDefs = mergeDefs.toUpperCase();
 		if (!mergeDefs.equals("ALWAYS") && !mergeDefs.equals("EXACT") && !mergeDefs.equals("NEVER")) {
-			err(String.format("Error: -m / --merge-defs must be ALWAYS, EXACT or NEVER, got: %s", mergeDefs));
-			System.exit(1);
+			abort(String.format("Error: -m / --merge-defs must be ALWAYS, EXACT or NEVER, got: %s", mergeDefs));
 		}
 
 		cli.put("merge-defs", mergeDefs);
@@ -123,10 +114,28 @@ public class ConvXdxf2Pbdic {
 
 		// 2. Parse XDXF
 		err("Parsing...");
-		InputStream input = fromStdin ? System.in : new FileInputStream(xdxfFile.toFile());
-		List<ParsedEntry> entries = XdxfHelper.parseXdxf(ConvXdxf2Pbdic::htmlToSdic, input);
+		var header = new XdxfHeader[1];
+		var entries = new ArrayList<ParsedEntry>();
+		try (InputStream input = fromStdin ? System.in : Files.newInputStream(xdxfPath)) {
+			int count = XdxfHelper.parseXdxf(input, //
+					ConvXdxf2Pbdic::htmlToSdic, //
+					hdr -> header[0] = hdr, //
+					entries::add);
+			err(String.format("read %d entries.", count));
+		}
 
-		err(String.format("read %d entries.", entries.size()));
+		// Use data from the header
+		if (header[0] != null) {
+			if (name == null || name.isBlank()) { // read the dict name from the header
+				name = header[0].name();
+			}
+		}
+
+		// there is no name, derive it from the file name
+		if (name == null || name.isBlank()) {
+			String fname = outPath;
+			name = fname.contains(".") ? fname.substring(0, fname.lastIndexOf('.')) : fname;
+		}
 
 		// 3. Sort by collated headword
 		err("Sorting...");
@@ -608,16 +617,21 @@ public class ConvXdxf2Pbdic {
 
 	static final String TOOL = "xdxf-2-pbdic";
 
-	static void err(String msg) {
+	static void err(String msg, Object... args) {
 		if (msg.isBlank() || msg.startsWith(TOOL)) {
-			errRaw(msg);
+			errRaw(msg, args);
 		} else {
-			errRaw(TOOL + ": " + msg);
+			errRaw(TOOL + ": " + msg, args);
 		}
 	}
 
-	static void errRaw(String msg) {
-		System.err.println(msg);
+	static void abort(String msg, Object... args) {
+		err(msg, args);
+		System.exit(1);
+	}
+
+	static void errRaw(String msg, Object... args) {
+		System.err.println(String.format(msg, args));
 	}
 
 	static String usage() {
