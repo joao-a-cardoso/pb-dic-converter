@@ -243,8 +243,8 @@ public class ConvTab2Xdxf {
 
 				Usage: tab-2-xdxf --in|-i         <input.tsv|->
 				                  --out|-o        <output.xdxf|->
-				                  --lang|-l       <ISO 639-1 or 639-2>
-				                  --lang-to|-t    <ISO 639-1 or 639-2> defaults to '--lang'
+				                  --lang|-l       <'From' language (ISO 639-1 or 639-2)>
+				                  --lang-to|-t    <'To' language (ISO 639-1 or 639-2)> defaults to '--lang'
 				                  --name|-n       <dictionary name>
 				                  --desc|-d       <dictionary description> (default to --name)
 				                  --in|-i         Input tabfile or - for stdin.

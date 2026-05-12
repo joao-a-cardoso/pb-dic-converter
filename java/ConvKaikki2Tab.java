@@ -146,18 +146,14 @@ public class ConvKaikki2Tab {
 		var argsHlp = new ArgsHelper(TOOL, "kaikki2tab", er -> err(er), () -> usage());
 
 		Properties config = argsHlp.loadProperties(configPath, true);
-		argsHlp.mergeConfig2Cli(List.of("in", "out", "lang", "lang-to", "embedded-defs"), cli, config);
+		argsHlp.mergeConfig2Cli(List.of("in", "out", "lang", "embedded-defs"), cli, config);
 
 		String input = argsHlp.require(cli, "in", "--in/-i");
 		String output = argsHlp.require(cli, "out", "--out/-o");
 		String lang = argsHlp.require(cli, "lang", "--lang/-l");
-		String langTo = argsHlp.resolve(cli, "lang-to", lang);
 
 		if (!LangHelper.validIso2(lang)) {
 			abort("Invalid ISO2 language: %s", lang);
-		}
-		if (!LangHelper.validIso2(langTo)) {
-			abort("Invalid ISO2 language: %s", langTo);
 		}
 
 		String ewArg = argsHlp.resolveUC(cli, "embedded-defs", "BOTH");
@@ -222,7 +218,7 @@ public class ConvKaikki2Tab {
 					}
 
 					// Main entry
-					String def = buildDefinition(word, langTo, entry, emitEmbedded);
+					String def = buildDefinition(word, entry, emitEmbedded);
 					if (!strIsEmpty(def)) {
 						String lin = word + "\t" + sanitize(def);
 						seenWords.add(word);
@@ -280,9 +276,7 @@ public class ConvKaikki2Tab {
 
 	// --- Definition builder ---
 
-	static String buildDefinition(String word, String langTo, Map<String, ?> entry, boolean emitEmbedded) {
-
-		// TODO Filter by langTo
+	static String buildDefinition(String word, Map<String, ?> entry, boolean emitEmbedded) {
 
 		boolean keepExpressionsWithEmptyContent = true;
 
@@ -861,8 +855,7 @@ public class ConvKaikki2Tab {
 
 				--in            accepts .jsonl or .jsonl.gz files.
 				--out           accepts a file path or - for stdout.
-				--lang          accepts 'main' language as ISO 639-1 language codes."
-				--lang-to       accepts 'from' language as ISO 639-1 language codes, default to 'lang'"
+				--lang          accepts 'source' language as ISO 639-1 language codes."
 				--embedded-defs controls how expressions are emitted (default: BOTH):
 				    KEEP     — expressions appear only embedded inside the parent word's definition.
 				    SEPARATE — expressions are emitted only as their own standalone entries.
