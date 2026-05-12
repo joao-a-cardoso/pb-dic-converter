@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portuguese Wiktionary — Kaikki Data Source</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0f1117;
+    --surface:   #181c25;
+    --surface2:  #1e2330;
+    --border:    #2a3045;
+    --teal:      #3ecfab;
+    --teal-dim:  #1d6e5a;
+    --teal-glow: rgba(62,207,171,0.08);
+    --text:      #e8eaf0;
+    --muted:     #7a8099;
+    --mono:      'JetBrains Mono', monospace;
+    --serif:     'Playfair Display', serif;
+    --body:      'Source Serif 4', serif;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--body);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+  }
+
+  .page {
+    width: 100%;
+    max-width: 640px;
+  }
+
+  /* ── Header ── */
+  .header {
+    margin-bottom: 2.5rem;
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--teal);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 1rem;
+  }
+
+  .eyebrow::before {
+    content: '';
+    display: inline-block;
+    width: 24px;
+    height: 1px;
+    background: var(--teal);
+  }
+
+  h1 {
+    font-family: var(--serif);
+    font-size: clamp(1.6rem, 4vw, 2.2rem);
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--text);
+    margin-bottom: 0.6rem;
+  }
+
+  h1 span {
+    color: var(--teal);
+  }
+
+  .subtitle {
+    font-size: 14px;
+    color: var(--muted);
+    font-family: var(--mono);
+    letter-spacing: 0.02em;
+  }
+
+  /* ── Divider ── */
+  .rule {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 2rem 0;
+  }
+
+  /* ── Card ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .card-header {
+    padding: 1.1rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--teal-dim);
+    flex-shrink: 0;
+  }
+
+  .dot.active { background: var(--teal); }
+
+  .card-title {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+    flex: 1;
+  }
+
+  .badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--teal);
+    background: var(--teal-glow);
+    border: 1px solid var(--teal-dim);
+    border-radius: 4px;
+    padding: 2px 8px;
+  }
+
+  /* ── Row ── */
+  .row {
+    padding: 1.25rem 1.5rem;
+    display: grid;
+    grid-template-columns: 80px 1fr;
+    gap: 0.5rem 1rem;
+    align-items: start;
+  }
+
+  .row + .row {
+    border-top: 1px solid var(--border);
+  }
+
+  .row-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding-top: 2px;
+  }
+
+  .row-value {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text);
+    word-break: break-all;
+    line-height: 1.6;
+  }
+
+  .row-value a {
+    color: var(--teal);
+    text-decoration: none;
+    border-bottom: 1px solid var(--teal-dim);
+    transition: border-color 0.15s;
+  }
+
+  .row-value a:hover {
+    border-color: var(--teal);
+  }
+
+  .filename {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 12.5px;
+    color: var(--text);
+    margin-top: 2px;
+  }
+
+  .filename svg {
+    flex-shrink: 0;
+    color: var(--muted);
+  }
+
+  /* ── Footer note ── */
+  .note {
+    margin-top: 1.5rem;
+    padding: 0 0.25rem;
+    font-size: 12.5px;
+    color: var(--muted);
+    font-family: var(--mono);
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    line-height: 1.7;
+  }
+
+  .note::before {
+    content: '//';
+    color: var(--teal-dim);
+    font-weight: 500;
+    flex-shrink: 0;
+  }
+
+  /* ── Copy button ── */
+  .copy-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+  }
+
+  .copy-btn {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 3px 10px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .copy-btn:hover {
+    color: var(--teal);
+    border-color: var(--teal-dim);
+  }
+
+  .copy-btn.copied {
+    color: var(--teal);
+    border-color: var(--teal);
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="header">
+    <div class="eyebrow">Kaikki.org · Data Source</div>
+    <h1>Portuguese <span>Wiktionary</span></h1>
+    <p class="subtitle">All languages → Portuguese &nbsp;·&nbsp; jsonl</p>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="dot active"></div>
+      <span class="card-title">PT-Wiktionary combined</span>
+      <span class="badge">jsonl</span>
+    </div>
+
+    <div class="row">
+      <span class="row-label">Entry Page</span>
+      <span class="row-value">
+        <a href="https://kaikki.org/ptwiktionary/All%20languages%20combined"
+           target="_blank" rel="noopener">
+          kaikki.org/ptwiktionary/<wbr>All languages combined
+        </a>
+      </span>
+    </div>
+    <div class="row">
+      <span class="row-label">Source</span>
+      <span class="row-value">
+        <a href="https://kaikki.org/ptwiktionary/All%20languages%20combined/kaikki.org-dictionary-all.jsonl"
+           target="_blank" rel="noopener">
+          kaikki.org/ptwiktionary/<wbr>All languages combined/<wbr>kaikki.org-dictionary-all.jsonl
+        </a>
+      </span>
+    </div>
+
+    <div class="row">
+      <span class="row-label">Save as</span>
+      <div>
+        <div class="filename">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          kaikki.org-all-to-Portuguese.jsonl
+        </div>
+        <div class="copy-wrap">
+          <button class="copy-btn" onclick="copyFilename(this)">copy filename</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <span class="row-label">wget</span>
+      <span class="row-value">
+        <div class="copy-wrap" style="margin-top:0; flex-wrap: wrap; gap: 6px;">
+          <code style="font-size:12px; color: var(--muted); word-break:break-all; line-height:1.8;">
+            wget -O - \<br>
+            &nbsp;&nbsp;"https://kaikki.org/ptwiktionary/All%20languages%20combined/<wbr>kaikki.org-dictionary-all.jsonl" \<br>
+            &nbsp;&nbsp;| gzip &gt; kaikki.org-all-to-Portuguese.jsonl.gz
+          </code>
+          <div style="margin-top:8px;">
+            <button class="copy-btn" onclick="copyWget(this)">copy command</button>
+          </div>
+        </div>
+      </span>
+    </div>
+  </div>
+
+  <p class="note">
+    Wiktionary data extracted and structured by Tatu Ylonen (kaikki.org).
+    Released under CC BY-SA 3.0 / CC BY-SA 4.0.
+  </p>
+
+</div>
+
+<script>
+function copyFilename(btn) {
+  navigator.clipboard.writeText('kaikki.org-all-to-Portuguese.jsonl.gz').then(() => {
+    btn.textContent = 'copied ✓';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'copy filename'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+function copyWget(btn) {
+  const cmd = `wget -O - \\\n  "https://kaikki.org/ptwiktionary/All%20languages%20combined/kaikki.org-dictionary-all.jsonl" \\\n  | gzip > kaikki.org-all-to-Portuguese.jsonl.gz`;
+  navigator.clipboard.writeText(cmd).then(() => {
+    btn.textContent = 'copied ✓';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'copy command'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+</script>
+</body>
+</html>
