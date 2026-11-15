@@ -1,7 +1,6 @@
 
 import java.io.BufferedReader;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -9,7 +8,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -21,89 +19,23 @@ import shared.XdxfHelper.XdxfEntry;
 import shared.XdxfHelper.XdxfHeader;
 
 /**
- * Converts a tabfile (TSV) dictionary to XDXF for use with
- * {@code xdxf-2-pbdic}.
+ * tab-2-xdxf — convert a TSV dictionary ({@code word<TAB>definition}) to
+ * XDXF, the input of {@code xdxf-2-pbdic} and {@code xdxf-2-stardict}.
  *
- * <br>
- * <b>Usage:</b>
- * 
- * <pre>
- *   ./tab-2-xdxf --in|-i          &lt;input.tsv|-&gt;
- *                --out|-o         &lt;output.xdxf|-&gt;
- *                --lang|-l        &lt;ISO 639-1 or 639-2&gt;
- *                --lang-to|-t     &lt;ISO 639-1 or 639-2&gt;
- *                --name|-n        &lt;dictionary name&gt;
- *                [--validate|-v]  true/false
- *                [--config|-c     &lt;config.properties&gt;]
- * </pre>
+ * <p>
+ * For usage, options and examples run {@code linux/tab-2-xdxf --help}.
  *
- * <br>
- * <b>Examples:</b>
- * 
- * <pre>
- *   ./tab-2-xdxf -i data/out/dict-pt-pt.tsv -o data/out/dict-pt-pt.xdxf -l pt -n "Dicionário PT-PT"
- *   ./tab-2-xdxf -i - -o data/out/kaikki-pt.xdxf -l pt -n "Dicionário PT (Kaikki)"  # stdin → file
- *   ./tab-2-xdxf -i - -o - -l pt -n "Kaikki PT"                                     # stdin → stdout
- *   ./tab-2-xdxf -c dict.properties
- *   kaikki-2-tab -c dict.properties | tab-2-xdxf -c dict.properties | xdxf-2-pbdic -c dict.properties
- * </pre>
- *
- * <br>
- * <b>Stdin/stdout:</b> use {@code -i -} to read from stdin and {@code -o -} to
- * write to stdout. When writing to stdout, XML is validated via a temporary
- * file before streaming. All progress messages are written to stderr so they do
- * not contaminate the pipe.
- *
- * <br>
- * <b>Validation:</b> output XML is validated with Java's SAX parser after
- * writing. If validation fails, the tool reports the line and column number,
- * deletes the output, and exits with code 1. Use {@code --validate false} to
- * skip validation.
- *
- * <br>
- * <b>Config file</b> ({@code .properties} format, namespace {@code tab2xdxf.*}
- * — CLI args override):
- * 
- * <pre>
- *   tab2xdxf.in=data/kaikki-pt.tsv
- *   tab2xdxf.out=-
- *   tab2xdxf.lang-from=pt
- *   tab2xdxf.lang-to=pt
- *   tab2xdxf.name=Dicionário PT (Kaikki)
- *   tab2xdxf.validate=false
- * </pre>
- *
- * <br>
- * <b>Tabfile format:</b> one entry per line: {@code word&lt;TAB&gt;definition}.
- * Lines starting with {@code #} and blank lines are ignored. Definitions may
- * contain HTML — it is cleaned and made XML-safe before writing.
- *
- * <br>
- * <b>Processing pipeline:</b>
- * <ol>
- * <li>Reads TSV input line by line</li>
- * <li>Cleans HTML definitions:
+ * <p>
+ * <b>Definition cleaning</b> (see {@code shared.XmlHelper}):
  * <ul>
  * <li>Strips all tag attributes</li>
- * <li>Whitelists safe tags: {@code p, b, i, em, strong, ol, ul, li,
- *           sub, sup, br, a, div, span, table, tr, td, th}</li>
- * <li>Self-closes void elements: {@code <br/>
- * }, {@code 
- * 
-<hr/>
- * }, {@code <img/>}</li>
- * <li>Escapes bare {@code &}, {@code <}, {@code >} characters</li>
- * <li>Replaces non-breaking spaces ({@code \u00a0}) with regular spaces</li>
+ * <li>Keeps only whitelisted tags ({@code XmlHelper.ALLOWED_TAGS}); void tags
+ * ({@code br, hr, img}) are self-closed</li>
+ * <li>Escapes bare {@code &}, {@code <}, {@code >}</li>
+ * <li>Replaces non-breaking spaces with regular spaces</li>
  * </ul>
- * </li>
- * <li>Formats definitions for readability on the e-reader</li>
- * <li>Writes valid XDXF with one {@code <ar>} entry per line</li>
- * <li>Validates output XML with Java's SAX parser (unless
- * {@code --validate false})</li>
- * </ol>
- *
- * <br>
- * <b>Requirements:</b> Java 17+ JDK ({@code java} must be on PATH)
+ * The output is validated with Java's SAX parser; on failure the output is
+ * deleted and the tool exits with code 1.
  */
 public class ConvTab2Xdxf {
 
@@ -123,7 +55,8 @@ public class ConvTab2Xdxf {
 	}
 
 	static void errRaw(String msg, Object... args) {
-		System.err.println(String.format(msg, args));
+		// only format when arguments are given: pre-built messages may contain a literal '%'
+		System.err.println(args.length == 0 ? msg : String.format(msg, args));
 	}
 
 	// ── main ──────────────────────────────────────────────────────────────────
@@ -169,16 +102,19 @@ public class ConvTab2Xdxf {
 
 		var header = new XdxfHeader(name, desc, lang3, langTo3, null);
 		var entries = fromStdin ? readTabfile(System.in) : readTabfile(new FileInputStream(input));
-		if (toStdout && !validate) {
+		if (toStdout && validate) {
 			// Write to temp file, validate, then stream to stdout
 			Path tmp = Files.createTempFile("tab2xdxf-", ".xdxf");
-			try (var out = new FileOutputStream(outFile.toFile())) {
-				XdxfHelper.writeXdxf(header, entries, out, er -> err(er));
+			try {
+				try (var out = Files.newOutputStream(tmp)) {
+					XdxfHelper.writeXdxf(header, entries, out, er -> err(er));
+				}
 				// exits on failure, deletes tmp
 				XdxfHelper.validateXdxf(tmp, true, er -> err(er));
-				try (var in = new java.io.FileInputStream(tmp.toFile())) {
+				try (var in = Files.newInputStream(tmp)) {
 					in.transferTo(System.out);
 				}
+				System.out.flush();
 			} finally {
 				Files.deleteIfExists(tmp);
 			}
@@ -219,45 +155,55 @@ public class ConvTab2Xdxf {
 
 	// --- Helpers ---
 
+	/**
+	 * Maps a command line word to its option key, or {@code null} when it is not
+	 * an option of this tool. Used by {@link ArgsHelper#parse} both to read options
+	 * and to detect an option given where a value was expected.
+	 */
+	static String optionKey(String arg) {
+		return switch (arg) {
+		case "--config", "-c"   -> "config";
+		case "--in", "-i"       -> "in";
+		case "--out", "-o"      -> "out";
+		case "--lang", "-l"     -> "lang";
+		case "--lang-to", "-t"  -> "lang-to";
+		case "--name", "-n"     -> "name";
+		case "--desc", "-d"     -> "desc";
+		case "--validate", "-v" -> "validate";
+		default -> null;
+		};
+	}
+
 	static Map<String, String> parseArgs(String[] args) {
-		var map = new LinkedHashMap<String, String>();
-		for (int i = 0; i < args.length; i++) {
-			switch (args[i]) {
-			case "--config", "-c" -> map.put("config", args[++i]);
-			case "--in", "-i" -> map.put("in", args[++i]);
-			case "--out", "-o" -> map.put("out", args[++i]);
-			case "--lang", "-l" -> map.put("lang-from", args[++i]);
-			case "--lang-to", "-t" -> map.put("lang-from", args[++i]);
-			case "--name", "-n" -> map.put("name", args[++i]);
-			case "--desc", "-d" -> map.put("desc", args[++i]);
-			case "--validate", "-v" -> map.put("validate", args[++i]);
-			default -> err(String.format("Warning: unknown argument '%s', ignoring.", args[i]));
-			}
-		}
-		return map;
+		return ArgsHelper.parse(args, ConvTab2Xdxf::optionKey, er -> err(er), () -> usage());
 	}
 
 	static String usage() {
 		return """
-				Convert dictionary data from TSV to XDXF.
+				Convert a TSV dictionary (word<TAB>definition) to XDXF.
+				Blank lines and lines starting with # are ignored.
 
-				Usage: tab-2-xdxf --in|-i         <input.tsv|->
-				                  --out|-o        <output.xdxf|->
-				                  --lang|-l       <'From' language (ISO 639-1 or 639-2)>
-				                  --lang-to|-t    <'To' language (ISO 639-1 or 639-2)> defaults to '--lang'
-				                  --name|-n       <dictionary name>
-				                  --desc|-d       <dictionary description> (default to --name)
-				                  --in|-i         Input tabfile or - for stdin.
-				                  --out|-o        Output XDXF file or - for stdout. Stdout output validates via a temp file.
-				                  --validate|-v   If false skip XML validation.
-				                  [--validate|-v] <true/false> default is true]
-				                  [--config|-c    <config.properties>]
+				Usage:
+				  linux/tab-2-xdxf -i <tsv> -o <xdxf> -l <lang> -n <name> [options]
+
+				Required:
+				  -i / --in        Input TSV file, or - for stdin
+				  -o / --out       Output XDXF file, or - for stdout
+				  -l / --lang      Language of the headwords, ISO 639-1 code (e.g. pt, en)
+				  -n / --name      Dictionary name
+
+				Optional:
+				  -t / --lang-to   Language of the definitions, ISO 639-1 code (default: --lang)
+				  -d / --desc      Dictionary description (default: --name)
+				  -v / --validate  true|false — validate the XML output (default: true);
+				                   with -o - it is validated in a temp file before streaming
+				  -c / --config    .properties config file (namespace: tab2xdxf.*);
+				                   command-line options override it
 
 				Examples:
-				  tab-2-xdxf -i data/out/kaikki-pt.tsv -o data/out/kaikki-pt.xdxf -l pt -n "Dicionário PT"
-				  tab-2-xdxf -i - -o data/out/kaikki-pt.xdxf -l pt -n "Dicionário PT"
-				  kaikki-2-tab -c dict.properties | tab-2-xdxf -c dict.properties | xdxf-2-pbdic -c dict.properties
-				  tab-2-xdxf -c dict.properties
+				  linux/tab-2-xdxf -i data/out/kaikki-pt.tsv -o data/out/kaikki-pt.xdxf -l pt -n "Dicionário PT"
+				  linux/kaikki-2-tab -c confs/kaikki2xdxf-pt-pt.config | linux/tab-2-xdxf -c confs/kaikki2xdxf-pt-pt.config
+				  linux/tab-2-xdxf -i - -o - -l en -t pt -n "EN-PT" < data/out/kaikki-en-pt.tsv > data/out/kaikki-en-pt.xdxf
 				""";
 	}
 }

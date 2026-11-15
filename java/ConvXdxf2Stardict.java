@@ -12,7 +12,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -27,24 +26,21 @@ import shared.XdxfHelper.XdxfHeader;
 /**
  * xdxf-2-stardict — convert an XDXF dictionary to StarDict format.
  *
- * Produces three files from a base output path: &lt;base&gt;.ifo — metadata
- * &lt;base&gt;.idx — binary index (word\0 + 4-byte offset + 4-byte size,
- * big-endian) &lt;base&gt;.dict.dz — gzip-compressed concatenated HTML
- * definitions
+ * <p>
+ * For usage, options and examples run {@code linux/xdxf-2-stardict --help}.
  *
- * Definitions are stored as HTML (sametypesequence=h), preserving the markup
- * produced by tab-2-xdxf for full rendering in KOReader and other StarDict
+ * <p>
+ * Output files, written to the output directory:
+ * <ul>
+ * <li>{@code stardict.ifo} — metadata</li>
+ * <li>{@code stardict.idx} — index: {@code word\0} + 4-byte offset + 4-byte
+ * size, big-endian</li>
+ * <li>{@code stardict.dict.dz} (or {@code stardict.dict} uncompressed) —
+ * concatenated definitions</li>
+ * </ul>
+ * Definitions are stored as HTML ({@code sametypesequence=h}), preserving the
+ * markup produced by {@code tab-2-xdxf} for KOReader and other StarDict
  * clients.
- *
- * Usage: linux/xdxf-2-stardict -i &lt;xdxf&gt; -o &lt;base&gt; -m
- * ALWAYS|EXACT|NEVER [options]
- *
- * Required: -i / --in Input XDXF file, or - for stdin -o / --out Output base
- * path (e.g. data/out/kaikki-pt) -m / --merge-defs ALWAYS|EXACT|NEVER —
- * duplicate headword handling
- *
- * Optional: -n / --name Dictionary title (default: base filename) -c / --config
- * .properties config file (namespace: xdxf2stardict.*)
  */
 public class ConvXdxf2Stardict {
 
@@ -66,7 +62,8 @@ public class ConvXdxf2Stardict {
 	}
 
 	static void errRaw(String msg, Object... args) {
-		System.err.println(String.format(msg, args));
+		// only format when arguments are given: pre-built messages may contain a literal '%'
+		System.err.println(args.length == 0 ? msg : String.format(msg, args));
 	}
 
 	// ── main ──────────────────────────────────────────────────────────────────
@@ -122,11 +119,9 @@ public class ConvXdxf2Stardict {
 			description = header[0].description();
 		}
 
-		// there is no name, derive it from the file name
-		if (name == null) {
-			// TODO; read the name from the XDXF content
-			String fname = outDir;
-			name = fname.contains(".") ? fname.substring(0, fname.lastIndexOf('.')) : fname;
+		// there is no name, derive it from the output directory name
+		if (name == null || name.isBlank()) {
+			name = ArgsHelper.baseName(outDir);
 		}
 
 		// 2. Sort alphabetically (case-insensitive)
@@ -286,46 +281,54 @@ public class ConvXdxf2Stardict {
 
 	// ── Config / CLI helpers ──────────────────────────────────────────────────
 
+	/**
+	 * Maps a command line word to its option key, or {@code null} when it is not
+	 * an option of this tool. Used by {@link ArgsHelper#parse} both to read options
+	 * and to detect an option given where a value was expected.
+	 */
+	static String optionKey(String arg) {
+		return switch (arg) {
+		case "--config", "-c"     -> "config";
+		case "--in", "-i"         -> "in";
+		case "--out", "-o"        -> "out";
+		case "--name", "-n"       -> "name";
+		case "--merge-defs", "-m" -> "merge-defs";
+		case "--compress", "-z"   -> "compress";
+		default -> null;
+		};
+	}
+
 	static Map<String, String> parseArgs(String[] args) throws IOException {
-		var cli = new LinkedHashMap<String, String>();
-		for (int i = 0; i < args.length; i++) {
-			switch (args[i]) {
-			case "--config", "-c" -> cli.put("config", args[++i]);
-			case "--in", "-i" -> cli.put("in", args[++i]);
-			case "--out", "-o" -> cli.put("out", args[++i]);
-			case "--name", "-n" -> cli.put("name", args[++i]);
-			case "--merge-defs", "-m" -> cli.put("merge-defs", args[++i]);
-			case "--compress", "-z" -> cli.put("compress", args[++i]);
-			default -> err(String.format("Warning: unknown argument '%s', ignoring.", args[i]));
-			}
-		}
-		return cli;
+		return ArgsHelper.parse(args, ConvXdxf2Stardict::optionKey, er -> err(er), () -> usage());
 	}
 
 	static String usage() {
 
 		return """
-				Convert dictionary data from XDXF to StarDict format
+				Convert an XDXF dictionary to StarDict format (HTML definitions).
 
 				Usage:
-				  linux/xdxf-2-stardict -i <xdxf> -o <base> -m ALWAYS|EXACT|NEVER [options]
+				  linux/xdxf-2-stardict -i <xdxf> -o <dir> -m ALWAYS|EXACT|NEVER -z true|false [options]
 
 				Required:
 				  -i / --in          Input XDXF file, or - for stdin
-				  -o / --out         Output base path (e.g. data/out/kaikki-pt)
-				                     Produces: <base>.ifo, <base>.idx, <base>.dict.dz
-				  -m / --merge-defs  ALWAYS — headword match is case-insensitive; merge different defs, drop identical
-				                     EXACT  — headword match is case-sensitive;   merge different defs, drop identical
-				                     NEVER  — never merge; only drop byte-identical duplicates
-				  -z / --compress     true - dictionary data is compress; false - is not compressed
+				  -o / --out         Output directory (created if missing); receives
+				                     stardict.ifo, stardict.idx and stardict.dict.dz (or stardict.dict)
+				  -m / --merge-defs  Duplicate headword handling:
+				                       ALWAYS — case-insensitive match; merge different defs, drop identical
+				                       EXACT  — case-sensitive match;   merge different defs, drop identical
+				                       NEVER  — never merge; only drop byte-identical duplicates
+				  -z / --compress    true — write stardict.dict.dz (compressed); false — write stardict.dict
 
 				Optional:
-				  -n / --name        Dictionary title (default to output file without extension. TODO: Read the name from the input XDXF content)
-				  -c / --config      .properties config file (namespace: xdxf2stardict.*)
+				  -n / --name        Dictionary title (default: name in the XDXF header,
+				                     else the output path without extension)
+				  -c / --config      .properties config file (namespace: xdxf2stardict.*);
+				                     command-line options override it
 
-				Example:
-				  linux/xdxf-2-stardict -i data/out/kaikki-pt.xdxf -o data/out/kaikki-pt -m EXACT -z false
-				  linux/xdxf-2-stardict -c dict.properties
+				Examples:
+				  linux/xdxf-2-stardict -i data/out/kaikki-pt.xdxf -o data/out/kaikki-pt.d -m EXACT -z true
+				  linux/tab-2-xdxf -i data/out/kaikki-pt.tsv -o - -l pt -n "Dicionário PT" | linux/xdxf-2-stardict -i - -o data/out/kaikki-pt.d -m EXACT -z true
 				  """;
 	}
 }

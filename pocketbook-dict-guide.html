@@ -529,9 +529,9 @@
   <div class="requirements">
     <div class="req-item"><span class="dot"></span>Java 25+ JDK</div>
     <div class="req-item"><span class="dot"></span><a href="https://www.reader-dict.com/pt/download/pt" target="_blank">StarDict dictionary (reader-dict.com)</a> — or —</div>
-    <div class="req-item"><span class="dot"></span><a href="https://kaikki.org/dictionary/downloads/pt/pt-extract.jsonl" target="_blank">Kaikki JSONL (kaikki.org)</a></div>
+    <div class="req-item"><span class="dot"></span><a href="https://kaikki.org/ptwiktionary/All%20languages%20combined" target="_blank">Kaikki JSONL — Portuguese Wiktionary (kaikki.org)</a></div>
     <div class="req-item"><span class="dot"></span><a href="https://github.com/Markismus/LanguageFilesPocketbookConverter" target="_blank">LanguageFilesPocketbookConverter</a> by <a href="https://github.com/Markismus" target="_blank">Markismus</a> — collation, keyboard &amp; morphem files</div>
-    <div class="req-item"><span class="dot"></span>stardict-2-tab · kaikki-2-tab · tab-2-xdxf · xdxf-2-pbdic · check-pbdic</div>
+    <div class="req-item"><span class="dot"></span>stardict-2-tab · kaikki-2-tab · tab-2-xdxf · xdxf-2-pbdic · check-pbdic · xdxf-2-stardict</div>
   </div>
 
   <div class="section-label">Steps</div>
@@ -565,12 +565,14 @@
         </div>
 
         <div id="tab-src-kaikki" class="tab-panel">
-          <p class="step-desc">Download the JSONL dump from kaikki.org. Each line is one JSON object representing a headword with all its linguistic data. The file is updated weekly from the English Wiktionary. A <code>.jsonl.gz</code> compressed version is also accepted by <code>kaikki-2-tab</code>.</p>
-          <a class="download-box" href="https://kaikki.org/dictionary/downloads/pt/pt-extract.jsonl.gz" target="_blank">
+          <p class="step-desc">Download the Portuguese Wiktionary dump (all languages, definitions in Portuguese) from kaikki.org. Each line is one JSON object representing a headword with all its linguistic data. <code>kaikki-2-tab</code> accepts it plain (<code>.jsonl</code>) or gzip-compressed (<code>.jsonl.gz</code>); compressing it while downloading saves a lot of disk space. Details are also in <code>data/kaikki/Download-Portuguese.html</code>.</p>
+          <pre><span class="cmd">wget</span> <span class="flag">-O</span> <span class="arg">-</span> <span class="arg">"https://kaikki.org/ptwiktionary/All%20languages%20combined/kaikki.org-dictionary-all.jsonl"</span> \
+  <span class="flag">|</span> <span class="cmd">gzip</span> <span class="flag">&gt;</span> <span class="arg">data/kaikki/kaikki.org-all-to-Portuguese.jsonl.gz</span></pre>
+          <a class="download-box" href="https://kaikki.org/ptwiktionary/All%20languages%20combined" target="_blank">
             <span class="dl-icon">↓</span>
             <div class="dl-text">
-              Kaikki — Portuguese JSONL dump
-              <span class="dl-url">kaikki.org/dictionary/downloads/pt/pt-extract.jsonl.gz</span>
+              Kaikki — Portuguese Wiktionary, all languages combined
+              <span class="dl-url">kaikki.org/ptwiktionary/All languages combined</span>
             </div>
           </a>
           <div class="note" style="margin-top:16px;">
@@ -632,14 +634,19 @@ linux/
   kaikki-2-tab          <span class="comment"># wrapper → ConvKaikki2Tab.java</span>
   tab-2-xdxf            <span class="comment"># wrapper → ConvTab2Xdxf.java</span>
   xdxf-2-pbdic          <span class="comment"># wrapper → ConvXdxf2Pbdic.java</span>
+  xdxf-2-stardict       <span class="comment"># wrapper → ConvXdxf2Stardict.java</span>
   check-pbdic           <span class="comment"># wrapper → CheckPbdic.java</span>
+  chain-kaikki-2-xdxf   <span class="comment"># kaikki-2-tab | tab-2-xdxf, driven by a config file</span>
+  chain-stardict-2-xdxf <span class="comment"># stardict-2-tab | tab-2-xdxf, driven by a config file</span>
   runjava               <span class="comment"># launcher: resolves java/ and runs java --source 25</span>
 java/
   ConvStardict2Tab.java <span class="comment"># StarDict → TSV</span>
   ConvKaikki2Tab.java   <span class="comment"># Kaikki JSONL → TSV</span>
   ConvTab2Xdxf.java     <span class="comment"># TSV → XDXF</span>
   ConvXdxf2Pbdic.java   <span class="comment"># XDXF → .dic</span>
+  ConvXdxf2Stardict.java <span class="comment"># XDXF → StarDict</span>
   CheckPbdic.java       <span class="comment"># validate .dic against .xdxf</span>
+  shared/               <span class="comment"># argument parsing, XDXF/XML/JSON helpers</span>
 data/
   stardict/
     dict-pt-pt/         <span class="comment"># StarDict source (if using StarDict)</span>
@@ -647,15 +654,16 @@ data/
       dict-data.idx
       dict-data.dict.dz
   kaikki/               <span class="comment"># Kaikki source (if using Kaikki)</span>
-    pt-extract.jsonl    <span class="comment"># or .jsonl.gz</span>
+    kaikki.org-all-to-Portuguese.jsonl.gz  <span class="comment"># or .jsonl</span>
   out/                  <span class="comment"># all generated files</span>
     *.tsv  *.xdxf  *.dic
 lang/                <span class="comment"># NOT in repo — download separately (see step 2)</span>
   pt/
     collates.txt  keyboard.txt  morphems.txt
-confs/kiakki2xdxf-pten-pt.config
-confs/kiakki2xdxf-pt-pt.config
-confs/stardict2xdxf-pt-pt.config</pre>
+confs/
+  kaikki2xdxf-pt-pt.config    <span class="comment"># Kaikki, Portuguese words → Portuguese definitions</span>
+  kaikki2xdxf-en-pt.config    <span class="comment"># Kaikki, English words → Portuguese definitions</span>
+  stardict2xdxf-pt-pt.config  <span class="comment"># StarDict (reader-dict) → XDXF</span></pre>
         <div class="note">
           <strong>Language files</strong> go in <code>lang/&lt;lang&gt;/</code> — this folder is <em>not</em> distributed with the toolchain. See step 2 for how to obtain them.
         </div>
@@ -681,40 +689,42 @@ confs/stardict2xdxf-pt-pt.config</pre>
         <div id="tab-conv-stardict" class="tab-panel active">
           <p class="step-desc"><code>stardict-2-tab</code> reads the StarDict binary files and writes a TSV. <code>tab-2-xdxf</code> converts the TSV to XDXF and validates the output XML.</p>
           <pre><span class="comment"># Give execute permission (once)</span>
-<span class="cmd">chmod</span> <span class="flag">+x</span> <span class="arg">linux/stardict-2-tab linux/kaikki-2-tab linux/tab-2-xdxf linux/xdxf-2-pbdic linux/check-pbdic linux/runjava</span>
+<span class="cmd">chmod</span> <span class="flag">+x</span> <span class="arg">linux/*</span>
 
 <span class="comment"># Step 1 — StarDict → TSV</span>
-<span class="cmd">linux/stardict-2-tab</span> <span class="flag">-i</span> <span class="arg">data/dict-pt-pt/dict-data.ifo</span> <span class="flag">-o</span> <span class="arg">data/out/dict-pt-pt.tsv</span>
+<span class="cmd">linux/stardict-2-tab</span> <span class="flag">-i</span> <span class="arg">data/stardict/dict-pt-pt/dict-data.ifo</span> <span class="flag">-o</span> <span class="arg">data/out/dict-pt-pt.tsv</span>
 
 <span class="comment"># Step 2 — TSV → XDXF</span>
 <span class="cmd">linux/tab-2-xdxf</span> <span class="flag">-i</span> <span class="arg">data/out/dict-pt-pt.tsv</span> <span class="flag">-o</span> <span class="arg">data/out/dict-pt-pt.xdxf</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-n</span> <span class="arg">"Dicionário PT-PT"</span>
 
 <span class="comment"># Step 3 — XDXF → .dic</span>
-<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/dict-pt-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/dict-pt-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-D</span> <span class="arg">lang/pt</span></pre>
+<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/dict-pt-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/dict-pt-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-m</span> <span class="arg">EXACT</span></pre>
           <div class="note">
-            <strong>Language codes:</strong> accepts ISO 639-1 (<code>pt</code>) or ISO 639-2 (<code>POR</code>) — two-letter codes are converted automatically.<br>
-            <strong>JDK required:</strong> the shebang launcher compiles on the fly; a full JDK is needed, not just the JRE.
+            <strong>Language codes:</strong> two-letter ISO 639-1 codes in lower case (<code>pt</code>, <code>en</code>, …).<br>
+            <strong>Options:</strong> run any tool with <code>--help</code> for its full list of options and defaults.<br>
+            <strong>JDK required:</strong> <code>runjava</code> compiles the sources on the fly; a full JDK is needed, not just the JRE.
           </div>
         </div>
 
         <div id="tab-conv-kaikki" class="tab-panel">
           <p class="step-desc"><code>kaikki-2-tab</code> parses the Kaikki JSONL and writes a TSV filtered by language code. <code>tab-2-xdxf</code> then converts it to XDXF. Both <code>.jsonl</code> and <code>.jsonl.gz</code> are accepted as input.</p>
           <pre><span class="comment"># Give execute permission (once)</span>
-<span class="cmd">chmod</span> <span class="flag">+x</span> <span class="arg">linux/stardict-2-tab linux/kaikki-2-tab linux/tab-2-xdxf linux/xdxf-2-pbdic linux/check-pbdic linux/runjava</span>
+<span class="cmd">chmod</span> <span class="flag">+x</span> <span class="arg">linux/*</span>
 
-<span class="comment"># Step 1 — Kaikki JSONL → TSV (single language, expressions as separate entries only)</span>
-<span class="cmd">linux/kaikki-2-tab</span> <span class="flag">-i</span> <span class="arg">data/kaikki/pt-extract.jsonl</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-pt.tsv</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-e</span> <span class="arg">SEPARATE</span>
+<span class="comment"># Step 1 — Kaikki JSONL → TSV (Portuguese headwords, expressions as separate entries only)</span>
+<span class="cmd">linux/kaikki-2-tab</span> <span class="flag">-i</span> <span class="arg">data/kaikki/kaikki.org-all-to-Portuguese.jsonl.gz</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-pt.tsv</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-e</span> <span class="arg">SEPARATE</span>
 
-<span class="comment"># Step 1 — multiple languages</span>
-<span class="cmd">linux/kaikki-2-tab</span> <span class="flag">-i</span> <span class="arg">data/kaikki/pt-extract.jsonl</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-pt-en.tsv</span> <span class="flag">-l</span> <span class="arg">pt,en</span> <span class="flag">-e</span> <span class="arg">SEPARATE</span>
+<span class="comment"># Step 1 — English headwords (definitions are still in Portuguese)</span>
+<span class="cmd">linux/kaikki-2-tab</span> <span class="flag">-i</span> <span class="arg">data/kaikki/kaikki.org-all-to-Portuguese.jsonl.gz</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-en-pt.tsv</span> <span class="flag">-l</span> <span class="arg">en</span>
 
 <span class="comment"># Step 2 — TSV → XDXF</span>
 <span class="cmd">linux/tab-2-xdxf</span> <span class="flag">-i</span> <span class="arg">data/out/kaikki-pt.tsv</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-pt.xdxf</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-n</span> <span class="arg">"Dicionário PT (Kaikki)"</span>
 
 <span class="comment"># Step 3 — XDXF → .dic</span>
-<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/kaikki-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-D</span> <span class="arg">lang/pt</span></pre>
+<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/kaikki-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-m</span> <span class="arg">ALWAYS</span></pre>
           <div class="note">
-            <strong>Kaikki data</strong> is updated weekly — re-download <code>pt-extract.jsonl</code> periodically to keep your dictionary current.<br>
+            <strong>Language:</strong> <code>-l</code> takes one ISO 639-1 code — the language of the headwords to keep; entries in other languages are skipped. For a dictionary with English headwords, also pass <code>-t pt</code> to <code>tab-2-xdxf</code> (definitions language).<br>
+            <strong>Kaikki data</strong> is updated regularly — re-download it (step 1) periodically to keep your dictionary current.<br>
             <strong>--embedded-defs</strong> controls how compound expressions are emitted: <code>SEPARATE</code> (standalone lookup entries only), <code>KEEP</code> (embedded inside the parent entry only), or <code>BOTH</code> (default). Use <code>SEPARATE</code> to avoid artefact headwords from Kaikki expression data.
           </div>
         </div>
@@ -723,17 +733,19 @@ confs/stardict2xdxf-pt-pt.config</pre>
           <p class="step-desc">Each conversion has its own config file. All tools read it via <code>-c</code> and use their own namespace — CLI arguments always override config values.</p>
           <p class="step-desc">Property keys are prefixed with the tool name, dashes removed. Setting <code>out=-</code> or <code>in=-</code> enables piping directly from the config.</p>
 
-          <pre><span class="comment"># confs/kiakki2xdxf-pten-pt.config — Kaikki PT+EN, piped to file</span>
+          <pre><span class="comment"># confs/kaikki2xdxf-pt-pt.config — Kaikki PT→PT, piped to file</span>
 
-kaikki2tab.in=data/kaikki/pt-extract.jsonl.gz
+kaikki2tab.in=data/kaikki/kaikki.org-all-to-Portuguese.jsonl.gz
 kaikki2tab.out=-
-kaikki2tab.lang=pt,en
-kaikki2tab.embedded-defs=SEPARATE
+kaikki2tab.lang=pt
+kaikki2tab.embedded-defs=BOTH
 
 tab2xdxf.in=-
-tab2xdxf.out=data/out/kaikki-pten-pt.xdxf
-tab2xdxf.lang=pt,en
-tab2xdxf.name=Wiktionary.org PT+EN-&gt;PT (Kaikki)</pre>
+tab2xdxf.out=data/out/kaikki-pt-pt13.xdxf
+tab2xdxf.lang=pt
+tab2xdxf.lang-to=pt
+tab2xdxf.name=Wiktionary.org pt-pt (Kaikki/13)
+tab2xdxf.desc=Wiktionary.org pt-pt (built from Kaikki's source data)</pre>
 
           <pre><span class="comment"># confs/stardict2xdxf-pt-pt.config — StarDict, piped to file</span>
 
@@ -746,17 +758,18 @@ tab2xdxf.lang=pt
 tab2xdxf.name=Wiktionário PT-&gt;PT (ReaderDict)</pre>
 
           <pre><span class="comment"># Run with the chain scripts</span>
-<span class="cmd">linux/chain-kaikki-2-xdxf</span>   <span class="arg">confs/kiakki2xdxf-pten-pt.config</span>
+<span class="comment"># (run from the project root)</span>
+<span class="cmd">linux/chain-kaikki-2-xdxf</span>   <span class="arg">confs/kaikki2xdxf-pt-pt.config</span>
 <span class="cmd">linux/chain-stardict-2-xdxf</span> <span class="arg">confs/stardict2xdxf-pt-pt.config</span>
 
-<span class="comment"># Or run tools individually</span>
-<span class="cmd">linux/kaikki-2-tab</span>  <span class="flag">-c</span> <span class="arg">confs/kiakki2xdxf-pten-pt.config</span>
-<span class="cmd">linux/tab-2-xdxf</span>   <span class="flag">-c</span> <span class="arg">confs/kiakki2xdxf-pten-pt.config</span>
+<span class="comment"># Or pipe the tools yourself</span>
+<span class="cmd">linux/kaikki-2-tab</span> <span class="flag">-c</span> <span class="arg">confs/kaikki2xdxf-pt-pt.config</span> <span class="flag">|</span> <span class="cmd">linux/tab-2-xdxf</span> <span class="flag">-c</span> <span class="arg">confs/kaikki2xdxf-pt-pt.config</span>
 
-<span class="comment"># CLI override — different language</span>
-<span class="cmd">linux/kaikki-2-tab</span> <span class="flag">-c</span> <span class="arg">confs/kiakki2xdxf-pt-pt.config</span> <span class="flag">-l</span> <span class="arg">pt,en</span> <span class="flag">-o</span> <span class="arg">-</span> <span class="flag">|</span> <span class="cmd">linux/tab-2-xdxf</span> <span class="flag">-i</span> <span class="arg">-</span> <span class="flag">-c</span> <span class="arg">confs/kiakki2xdxf-pt-pt.config</span></pre>
+<span class="comment"># CLI override — English headwords, different output</span>
+<span class="cmd">linux/kaikki-2-tab</span> <span class="flag">-c</span> <span class="arg">confs/kaikki2xdxf-pt-pt.config</span> <span class="flag">-l</span> <span class="arg">en</span> <span class="flag">|</span> <span class="cmd">linux/tab-2-xdxf</span> <span class="flag">-c</span> <span class="arg">confs/kaikki2xdxf-pt-pt.config</span> <span class="flag">-l</span> <span class="arg">en</span> <span class="flag">-n</span> <span class="arg">"EN-PT"</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-en-pt.xdxf</span></pre>
 
           <div class="note">
+            <strong>Chain scripts</strong> stop at <code>.xdxf</code>; run <code>xdxf-2-pbdic</code> (step 5) afterwards.<br>
             <strong>Namespaces:</strong> <code>stardict-2-tab</code> → <code>stardict2tab.*</code>, <code>kaikki-2-tab</code> → <code>kaikki2tab.*</code>, <code>tab-2-xdxf</code> → <code>tab2xdxf.*</code>, <code>xdxf-2-pbdic</code> → <code>xdxf2pcdic.*</code>, <code>check-pbdic</code> → <code>checkpbdic.*</code>.<br>
             <strong>Piping:</strong> all progress messages go to stderr, so only data flows through the pipe. XML validation runs automatically even in pipeline mode (via a temporary file) — no flags needed.
           </div>
@@ -775,20 +788,23 @@ tab2xdxf.name=Wiktionário PT-&gt;PT (ReaderDict)</pre>
           <code>xdxf-2-pbdic</code> is a pure-Java tool included in this toolchain — no Wine or closed-source dependencies required.
         </p>
         <pre><span class="comment"># StarDict pipeline</span>
-<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/dict-pt-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/dict-pt-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-D</span> <span class="arg">lang/pt</span> <span class="flag">-m</span> <span class="arg">EXACT</span>
-<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/kaikki-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-D</span> <span class="arg">lang/pt</span> <span class="flag">-m</span> <span class="arg">ALWAYS</span>
+<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/dict-pt-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/dict-pt-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-m</span> <span class="arg">EXACT</span>
 
-<span class="comment"># Full chain piped into xdxf-2-pbdic (shared config)</span>
-<span class="cmd">linux/chain-kaikki-2-xdxf</span> <span class="arg">confs/kiakki2xdxf-pt-pt.config</span>
-<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-c</span> <span class="arg">confs/kiakki2xdxf-pt-pt.config</span></pre>
+<span class="comment"># Kaikki pipeline</span>
+<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/kaikki-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-m</span> <span class="arg">ALWAYS</span>
+
+<span class="comment"># After a chain script (shared config) — the configs stop at .xdxf</span>
+<span class="cmd">linux/chain-kaikki-2-xdxf</span> <span class="arg">confs/kaikki2xdxf-pt-pt.config</span>
+<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/kaikki-pt-pt13.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-pt-pt13.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-m</span> <span class="arg">ALWAYS</span></pre>
         <div class="note">
-          <strong>Language files:</strong> the <code>-D lang/pt</code> flag points to a folder containing <code>collates.txt</code>, <code>keyboard.txt</code>, and <code>morphems.txt</code> for your target language. Download from <a href="https://github.com/Markismus/LanguageFilesPocketbookConverter" target="_blank">LanguageFilesPocketbookConverter</a> by <a href="https://github.com/Markismus" target="_blank">Markismus</a>.<br>
+          <strong>Language files:</strong> read from <code>lang/&lt;lang&gt;</code> by default (<code>lang/pt</code> for <code>-l pt</code>); use <code>-d &lt;dir&gt;</code> for another folder. It must contain <code>collates.txt</code>, <code>keyboard.txt</code>, and <code>morphems.txt</code> — see step 2.<br>
+          <strong>Dictionary name:</strong> taken from the XDXF header; <code>-n</code> overrides it.<br>
           <strong>--merge-defs / -m (required):</strong> controls how duplicate headwords are handled.
           <code>ALWAYS</code> — headword match is case-insensitive; different definitions are merged (blank line between them), identical entries are dropped. Recommended for Kaikki sources.
           <code>EXACT</code> — headword match is case-sensitive; different definitions for the exact same headword are merged, identical entries are dropped. Recommended for StarDict sources.
           <code>NEVER</code> — never merge; only byte-identical duplicates are dropped.
-          Set via config as <code>xdxf2pbdic.merge-defs=EXACT</code>.<br>
-          <strong>Output:</strong> the <code>.dic</code> file is written to <code>data/out/</code>.
+          Set via config as <code>xdxf2pcdic.merge-defs=EXACT</code> (the namespace is spelled <code>xdxf2pcdic</code>).<br>
+          <strong>Output:</strong> the <code>.dic</code> file is written to the path given with <code>-o</code>.
         </div>
       </div>
     </div>
@@ -805,6 +821,23 @@ tab2xdxf.name=Wiktionário PT-&gt;PT (ReaderDict)</pre>
         <pre><span class="cmd">linux/check-pbdic</span> <span class="flag">-x</span> <span class="arg">data/out/kaikki-pt.xdxf</span> <span class="flag">-d</span> <span class="arg">data/out/kaikki-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-n</span> <span class="arg">50</span></pre>
         <div class="note">
           Exits with code <code>0</code> on success, <code>1</code> if any check fails — suitable for use in a build script or CI pipeline.
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 5c -->
+    <div class="step">
+      <div class="step-line"></div>
+      <div class="step-number">5c</div>
+      <div class="step-content">
+        <div class="step-title">Export to StarDict (optional)</div>
+        <p class="step-desc">
+          <code>xdxf-2-stardict</code> writes the same XDXF as a StarDict dictionary with HTML definitions, for KOReader and other StarDict readers.
+        </p>
+        <pre><span class="cmd">linux/xdxf-2-stardict</span> <span class="flag">-i</span> <span class="arg">data/out/kaikki-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-pt.d</span> <span class="flag">-m</span> <span class="arg">ALWAYS</span> <span class="flag">-z</span> <span class="arg">true</span></pre>
+        <div class="note">
+          <strong>Output:</strong> <code>-o</code> is a directory; it receives <code>stardict.ifo</code>, <code>stardict.idx</code> and <code>stardict.dict.dz</code> (<code>stardict.dict</code> with <code>-z false</code>).
+          <code>-m</code> works as in step 5.
         </div>
       </div>
     </div>
@@ -833,7 +866,7 @@ tab2xdxf.name=Wiktionário PT-&gt;PT (ReaderDict)</pre>
   <!-- ===================== LEGACY ===================== -->
   <div class="section-label">Legacy</div>
   <div class="deprecated">
-    <strong>dict-2-xdxf — deprecated.</strong> Earlier versions of this guide used a single <code>dict-2-xdxf</code> tool that handled both StarDict and tabfile input via a <code>--format</code> flag. It has been superseded by the modular toolchain above (<code>stardict-2-tab</code>, <code>kaikki-2-tab</code>, <code>tab-2-xdxf</code>), which separates reading and writing concerns and converges on a common TSV intermediate format. <code>dict-2-xdxf</code> remains functional for single-step StarDict or tabfile conversion, but will not receive further updates.
+    <strong>dict-2-xdxf — deprecated.</strong> Earlier versions of this guide used a single <code>dict-2-xdxf</code> tool that handled both StarDict and tabfile input via a <code>--format</code> flag. It has been superseded by the modular toolchain above (<code>stardict-2-tab</code>, <code>kaikki-2-tab</code>, <code>tab-2-xdxf</code>), which separates reading and writing concerns and converges on a common TSV intermediate format. <code>dict-2-xdxf</code> is no longer part of the toolchain.
   </div>
   <div class="deprecated">
     <strong>converter.exe — deprecated.</strong> Earlier versions of this guide described <code>converter.exe</code> (a patched Windows binary run via Wine) as an alternative final step for producing <code>.dic</code> files from XDXF. It has been superseded by <code>xdxf-2-pbdic</code>, a pure-Java tool included in this toolchain that requires no Wine, no Windows, and no closed-source dependencies. <code>xdxf-2-pbdic</code> produces output verified to be compatible with PocketBook firmware and is the only supported conversion path going forward.

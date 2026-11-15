@@ -24,23 +24,21 @@ import shared.ArgsHelper;
 /**
  * check-pbdic — validate a PocketBook .dic file against its source XDXF.
  *
- * Checks performed: 1. Entry count — total entries in .dic matches XDXF 2.
- * Headwords — every XDXF headword is present in .dic 3. Sort order — .dic
- * entries are ordered by collation key 4. Definitions — spot-check N sampled
- * entries: definition text matches 5. Firmware fmt — every definition starts
- * and ends with 0x20; 0x01 followed by 0x20; 0x0A preceded by 0x20 6. Block
- * sizes — compressed ≤ 4096 bytes; decompressed ≤ 27774 bytes; index ≤ 55000
- * bytes
+ * <p>
+ * For usage, options and examples run {@code linux/check-pbdic --help}.
  *
- * Usage: CheckPbdic -x data/out/dict-pt.xdxf -d data/out/dict-pt.dic -l pt [-n
- * 50] [-c dict.properties]
- *
- * Required: -x / --xdxf Source XDXF file -d / --dic PocketBook .dic file to
- * validate -l / --lang Language code (e.g. pt) — used to load collates.txt
- *
- * Optional: -n / --sample Number of entries to spot-check definitions (default:
- * 20) -D / --langdir Language files directory (default: windows/<lang>/) -c /
- * --config .properties config file (namespace: checkpbdic.*)
+ * <p>
+ * Checks performed:
+ * <ol>
+ * <li>Entry count — total entries in .dic match the XDXF</li>
+ * <li>Headwords — every XDXF headword is present in the .dic</li>
+ * <li>Sort order — .dic entries are ordered by collation key</li>
+ * <li>Definitions — N sampled entries have matching definition text</li>
+ * <li>Firmware format — every definition starts and ends with 0x20; 0x01 is
+ * followed by 0x20; 0x0A is preceded by 0x20</li>
+ * <li>Block sizes — compressed ≤ 4096 bytes; decompressed ≤ 27774 bytes;
+ * index ≤ 55000 bytes</li>
+ * </ol>
  */
 public class CheckPbdic {
 
@@ -91,7 +89,8 @@ public class CheckPbdic {
 	// ── main ──────────────────────────────────────────────────────────────────
 	public static void main(String[] args) throws Exception {
 		if (args.length == 0 || Arrays.asList(args).contains("--help")) {
-			fail(usage());
+			err(usage());
+			System.exit(1);
 		}
 
 		var argsHlp = new ArgsHelper(TOOL, "checkpbdic", er -> err(er), () -> usage());
@@ -112,10 +111,16 @@ public class CheckPbdic {
 		Path langDirPath = Path.of(langDir);
 		Path collatesFile = langDirPath.resolve("collates.txt");
 
+		// Report every missing input, then stop: nothing can be checked without them
+		boolean inputMissing = false;
 		for (Path p : List.of(xdxfFile, dicFile, collatesFile)) {
 			if (!Files.exists(p)) {
-				fail("Error: file not found: " + p);
+				err("Error: file not found: " + p);
+				inputMissing = true;
 			}
+		}
+		if (inputMissing) {
+			System.exit(1);
 		}
 
 		argsHlp.listProperties(cli);
@@ -637,25 +642,30 @@ public class CheckPbdic {
 
 	// ── Config / CLI ──────────────────────────────────────────────────────────
 
+	/**
+	 * Maps a command line word to its option key, or {@code null} when it is not
+	 * an option of this tool. Used by {@link ArgsHelper#parse} both to read options
+	 * and to detect an option given where a value was expected.
+	 */
+	static String optionKey(String arg) {
+		return switch (arg) {
+		case "--config", "-c"  -> "config";
+		case "--xdxf", "-x"    -> "xdxf";
+		case "--dic", "-d"     -> "dic";
+		case "--lang", "-l"    -> "lang";
+		case "--langdir", "-D" -> "langdir";
+		case "--sample", "-n"  -> "sample";
+		default -> null;
+		};
+	}
+
 	static Map<String, String> parseArgs(String[] args) throws IOException {
-		var cli = new LinkedHashMap<String, String>();
-		for (int i = 0; i < args.length; i++) {
-			switch (args[i]) {
-			case "--config", "-c" -> cli.put("config", args[++i]);
-			case "--xdxf", "-x" -> cli.put("xdxf", args[++i]);
-			case "--dic", "-d" -> cli.put("dic", args[++i]);
-			case "--lang", "-l" -> cli.put("lang", args[++i]);
-			case "--langdir", "-D" -> cli.put("langdir", args[++i]);
-			case "--sample", "-n" -> cli.put("sample", args[++i]);
-			default -> err("Warning: unknown argument '" + args[i] + "', ignoring.");
-			}
-		}
-		return cli;
+		return ArgsHelper.parse(args, CheckPbdic::optionKey, er -> err(er), () -> usage());
 	}
 
 	static String usage() {
 		return TOOL + ": " + """
-				Validate a PocketBook .dic against its XDXF source
+				Validate a PocketBook .dic against its XDXF source.
 
 				Usage:
 				  linux/check-pbdic -x <xdxf> -d <dic> -l <lang> [options]
@@ -663,14 +673,18 @@ public class CheckPbdic {
 				Required:
 				  -x / --xdxf      Source XDXF file
 				  -d / --dic       .dic file to validate
-				  -l / --lang      Language code (e.g. pt, en)
+				  -l / --lang      Language code (e.g. pt, en); selects the language files
 
 				Optional:
-				  -n / --sample    Entries to spot-check definitions (default: 20)
-				  -D / --langdir   Language files dir (default: windows/<lang>/)"
-				  -c / --config   .properties config file (namespace: checkpbdic.*)
+				  -n / --sample    Number of entries whose definitions are spot-checked (default: 20)
+				  -D / --langdir   Language files dir with collates.txt (default: lang/<lang>)
+				  -c / --config    .properties config file (namespace: checkpbdic.*);
+				                   command-line options override it
 
-				Exit code: 0 = all checks passed, 1 = one or more checks failed.
+				Exit code: 0 = all checks passed; 1 = a check failed, or invalid arguments/files.
+
+				Example:
+				  linux/check-pbdic -x data/out/kaikki-pt.xdxf -d data/out/kaikki-pt.dic -l pt
 				""";
 	}
 }

@@ -14,7 +14,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -23,46 +22,11 @@ import java.util.zip.GZIPInputStream;
 import shared.ArgsHelper;
 
 /**
- * Converts a StarDict dictionary to a tabfile (TSV) for use with
- * {@code tab-2-xdxf}.
+ * stardict-2-tab — convert a StarDict dictionary to TSV
+ * ({@code word<TAB>definition}), the input of {@code tab-2-xdxf}.
  *
- * <br>
- * <b>Usage:</b>
- * 
- * <pre>
- *   ./stardict-2-tab --in|-i &lt;input.ifo&gt; --out|-o &lt;output.tsv|-&gt;
- *                   [--config|-c &lt;config.properties&gt;]
- * </pre>
- *
- * <br>
- * <b>Examples:</b>
- * 
- * <pre>
- *   ./stardict-2-tab -i data/dict-pt-pt/dict-data.ifo -o data/out/dict-pt-pt.tsv
- *   ./stardict-2-tab -i data/dict-pt-pt/dict-data.ifo -o -   # write to stdout
- *   ./stardict-2-tab -c stardict.properties
- * </pre>
- *
- * <br>
- * <b>Stdout:</b> use {@code -o -} to write TSV to stdout for piping into
- * {@code tab-2-xdxf}. This can also be set in the config file. All progress
- * messages are written to stderr so they do not pollute the stream.
- *
- * <br>
- * <b>Config file</b> ({@code .properties} format — CLI args override):
- * 
- * <pre>
- *   stardict2tab.in=data/dict-pt-pt/dict-data.ifo
- *   stardict2tab.out=data/dict-pt-pt.tsv
- * </pre>
- *
- * <br>
- * <b>Input:</b> StarDict {@code .ifo} file — the {@code .idx} and
- * {@code .dict.dz} files are located automatically in the same directory. <br>
- * <b>Output:</b> TSV — one entry per line: {@code word&lt;TAB&gt;definition}
- *
- * <br>
- * <b>Requirements:</b> Java 17+ JDK ({@code java} must be on PATH)
+ * <p>
+ * For usage, options and examples run {@code linux/stardict-2-tab --help}.
  */
 public class ConvStardict2Tab {
 
@@ -82,7 +46,8 @@ public class ConvStardict2Tab {
 	}
 
 	static void errRaw(String msg, Object... args) {
-		System.err.println(String.format(msg, args));
+		// only format when arguments are given: pre-built messages may contain a literal '%'
+		System.err.println(args.length == 0 ? msg : String.format(msg, args));
 	}
 
 	record Entry(String word, String definition) {
@@ -195,32 +160,44 @@ public class ConvStardict2Tab {
 
 	// --- Helpers ---
 
+	/**
+	 * Maps a command line word to its option key, or {@code null} when it is not
+	 * an option of this tool. Used by {@link ArgsHelper#parse} both to read options
+	 * and to detect an option given where a value was expected.
+	 */
+	static String optionKey(String arg) {
+		return switch (arg) {
+		case "--config", "-c" -> "config";
+		case "--in", "-i"     -> "in";
+		case "--out", "-o"    -> "out";
+		default -> null;
+		};
+	}
+
 	static Map<String, String> parseArgs(String[] args) {
-		var map = new LinkedHashMap<String, String>();
-		for (int i = 0; i < args.length; i++) {
-			switch (args[i]) {
-			case "--config", "-c" -> map.put("config", args[++i]);
-			case "--in", "-i" -> map.put("in", args[++i]);
-			case "--out", "-o" -> map.put("out", args[++i]);
-			default -> err("Warning: unknown argument '" + args[i] + "', ignoring.");
-			}
-		}
-		return map;
+		return ArgsHelper.parse(args, ConvStardict2Tab::optionKey, er -> err(er), () -> usage());
 	}
 
 	static String usage() {
 		return """
-				Convert dictionary data from StarDict to TSV.
+				Convert a StarDict dictionary to TSV (word<TAB>definition).
 
-				Usage: stardict-2-tab --in|-i <input.ifo> --out|-o <output.tsv|->
-				                      [--config|-c <config.properties>]
+				Usage:
+				  linux/stardict-2-tab -i <ifo> -o <tsv> [options]
 
-				Use -o - to write TSV to stdout (can also be set in the config file).
+				Required:
+				  -i / --in      StarDict .ifo file; the .idx and .dict.dz (or .dict) files
+				                 with the same name are read from the same directory
+				  -o / --out     Output TSV file, or - for stdout
 
-				Example:
-				  stardict-2-tab -i data/dict-pt-pt/dict-data.ifo -o data/out/dict-pt-pt.tsv
-				  stardict-2-tab -i data/dict-pt-pt/dict-data.ifo -o - | tab-2-xdxf -i - ...
-				  stardict-2-tab -c stardict.properties
+				Optional:
+				  -c / --config  .properties config file (namespace: stardict2tab.*);
+				                 command-line options override it
+
+				Examples:
+				  linux/stardict-2-tab -i data/stardict/dict-pt-pt/dict-data.ifo -o data/out/dict-pt-pt.tsv
+				  linux/stardict-2-tab -i data/stardict/dict-pt-pt/dict-data.ifo -o - | linux/tab-2-xdxf -i - ...
+				  linux/stardict-2-tab -c confs/stardict2xdxf-pt-pt.config
 				""";
 	}
 }

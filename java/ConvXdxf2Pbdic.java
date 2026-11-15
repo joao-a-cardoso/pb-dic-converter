@@ -13,7 +13,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -27,24 +26,19 @@ import shared.XdxfHelper.ParsedEntry;
 import shared.XdxfHelper.XdxfHeader;
 
 /**
- * xdxf-2-pbdic — convert an XDXF dictionary to PocketBook's native .dic (SDIC)
- * format.
+ * xdxf-2-pbdic — convert an XDXF dictionary to PocketBook's native .dic
+ * (SDIC) format.
  *
- * Usage: linux/xdxf-2-pbdic -i data/out/dict-pt.xdxf -o data/out/dict-pt.dic -l
- * pt [-d lang/pt] [-n "My Dict"] [-c dict.properties]
+ * <p>
+ * For usage, options and examples run {@code linux/xdxf-2-pbdic --help}.
  *
- * Required: -i / --in Input XDXF file -o / --out Output .dic file -l / --lang
- * Language code (e.g. pt, en) — used to locate language dir
- *
- * Optional: -d / --langdir Language files directory (default: lang/<lang>/) -n
- * / --name Dictionary title (default: input filename without extension) -c /
- * --config Shared .properties config file (namespace: xdxf2dic.*)
- *
+ * <p>
  * Language files (collates.txt, morphems.txt, keyboard.txt):
  * https://github.com/Markismus/LanguageFilesPocketbookConverter
  *
- * SDIC format constants: 0x02 = begin bold 0x03 = begin italic 0x01 = end span
- * 0x0a = newline
+ * <p>
+ * SDIC definition bytecodes: 0x02 = begin bold, 0x03 = begin italic, 0x01 =
+ * end span, 0x0a = newline. Format details: {@code docs/sdic_format.pdf}.
  */
 public class ConvXdxf2Pbdic {
 
@@ -131,10 +125,9 @@ public class ConvXdxf2Pbdic {
 			}
 		}
 
-		// there is no name, derive it from the file name
+		// there is no name, derive it from the output file name
 		if (name == null || name.isBlank()) {
-			String fname = outPath;
-			name = fname.contains(".") ? fname.substring(0, fname.lastIndexOf('.')) : fname;
+			name = ArgsHelper.baseName(outPath);
 		}
 
 		// 3. Sort by collated headword
@@ -597,22 +590,26 @@ public class ConvXdxf2Pbdic {
 
 	// ── Config / CLI helpers ──────────────────────────────────────────────────
 
-	static Map<String, String> parseArgs(String[] args) throws IOException {
-		var cli = new LinkedHashMap<String, String>();
-		for (int i = 0; i < args.length; i++) {
-			switch (args[i]) {
-			case "--config", "-c" -> cli.put("config", args[++i]);
-			case "--in", "-i" -> cli.put("in", args[++i]);
-			case "--out", "-o" -> cli.put("out", args[++i]);
-			case "--lang", "-l" -> cli.put("lang", args[++i]);
-			case "--langdir", "-d" -> cli.put("langdir", args[++i]);
-			case "--name", "-n" -> cli.put("name", args[++i]);
-			case "--merge-defs", "-m" -> cli.put("merge-defs", args[++i]);
-			default -> err(String.format("Warning: unknown argument '%s', ignoring.", args[i]));
-			}
-		}
+	/**
+	 * Maps a command line word to its option key, or {@code null} when it is not
+	 * an option of this tool. Used by {@link ArgsHelper#parse} both to read options
+	 * and to detect an option given where a value was expected.
+	 */
+	static String optionKey(String arg) {
+		return switch (arg) {
+		case "--config", "-c"     -> "config";
+		case "--in", "-i"         -> "in";
+		case "--out", "-o"        -> "out";
+		case "--lang", "-l"       -> "lang";
+		case "--langdir", "-d"    -> "langdir";
+		case "--name", "-n"       -> "name";
+		case "--merge-defs", "-m" -> "merge-defs";
+		default -> null;
+		};
+	}
 
-		return cli;
+	static Map<String, String> parseArgs(String[] args) throws IOException {
+		return ArgsHelper.parse(args, ConvXdxf2Pbdic::optionKey, er -> err(er), () -> usage());
 	}
 
 	static final String TOOL = "xdxf-2-pbdic";
@@ -631,31 +628,37 @@ public class ConvXdxf2Pbdic {
 	}
 
 	static void errRaw(String msg, Object... args) {
-		System.err.println(String.format(msg, args));
+		// only format when arguments are given: pre-built messages may contain a literal '%'
+		System.err.println(args.length == 0 ? msg : String.format(msg, args));
 	}
 
 	static String usage() {
 		return """
-				Convert dictionary data drom XDXF to PocketBook .dic
+				Convert an XDXF dictionary to PocketBook .dic (SDIC) format.
 
 				Usage:
-				  linux/xdxf-2-pbdic -i <xdxf> -o <dic> -l <lang> [options]
+				  linux/xdxf-2-pbdic -i <xdxf> -o <dic> -l <lang> -m ALWAYS|EXACT|NEVER [options]
 
 				Required:
-				  -i / --in       Input XDXF file, or - to read from stdin
-				  -o / --out      Output .dic file
-				  -l / --lang     Language code (e.g. pt, en, fr)
-				  -m / --merge-defs  ALWAYS — headword match is case-insensitive; merge different defs, drop identical
-				                     EXACT  — headword match is case-sensitive;   merge different defs, drop identical
-				                     NEVER  — never merge; only drop byte-identical duplicates
+				  -i / --in          Input XDXF file, or - for stdin
+				  -o / --out         Output .dic file
+				  -l / --lang        Language code (e.g. pt, en); selects the language files
+				  -m / --merge-defs  Duplicate headword handling:
+				                       ALWAYS — case-insensitive match; merge different defs, drop identical
+				                       EXACT  — case-sensitive match;   merge different defs, drop identical
+				                       NEVER  — never merge; only drop byte-identical duplicates
+
 				Optional:
-				  -d / --langdir  Language files dir (default: lang/<lang>/)
-				  -n / --name     Dictionary title (default to output file without extension. TODO: Read the name from the input XDXF content)
-				  -c / --config   .properties config file (namespace: xdxf2dic.*)
+				  -d / --langdir     Language files dir with collates.txt, morphems.txt, keyboard.txt
+				                     (default: lang/<lang>)
+				  -n / --name        Dictionary title (default: name in the XDXF header,
+				                     else the output path without extension)
+				  -c / --config      .properties config file (namespace: xdxf2pcdic.*);
+				                     command-line options override it
 
 				Examples:
-				  linux/xdxf-2-pbdic -i data/out/kaikki-pt.xdxf -o data/out/kaikki-pt.dic -l pt -n \"Dicionário PT\"
-				  linux/kaikki-2-tab -c dict.properties | linux/xdxf-2-pbdic -i - -o data/out/kaikki-pt.dic -l pt
+				  linux/xdxf-2-pbdic -i data/out/kaikki-pt.xdxf -o data/out/kaikki-pt.dic -l pt -m ALWAYS
+				  linux/tab-2-xdxf -i data/out/kaikki-pt.tsv -o - -l pt -n "Dicionário PT" | linux/xdxf-2-pbdic -i - -o data/out/kaikki-pt.dic -l pt -m ALWAYS
 				  """;
 	}
 }

@@ -1,3 +1,4 @@
+lang/**/*
 data/out/**/*
 windows/**/*
 !**/README.*

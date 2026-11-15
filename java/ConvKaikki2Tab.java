@@ -35,82 +35,28 @@ import shared.JsonParser;
 import shared.LangHelper;
 
 /**
- * Converts a Kaikki JSONL dictionary dump to a tabfile (TSV) for use with
- * {@code dict-2-xdxf --format tab}.
+ * kaikki-2-tab — convert a Kaikki (Wiktionary) JSONL dump to TSV
+ * ({@code word<TAB>definition}, definitions in HTML), the input of
+ * {@code tab-2-xdxf}.
  *
- * <br>
- * <b>Usage:</b>
- * 
- * <pre>
- *   ./kaikki-2-tab --in|-i &lt;input.jsonl&gt; --out|-o &lt;output.tsv&gt; --lang|-l &lt;code[,code...]&gt;
- *                 [--config|-c &lt;config.properties&gt;]
- * </pre>
+ * <p>
+ * For usage, options and examples run {@code linux/kaikki-2-tab --help}.
  *
- * <br>
- * <b>Examples:</b>
- * 
- * <pre>
- *   ./kaikki-2-tab -i data/kaikki/pt-extract.jsonl -o data/out/kaikki-pt.tsv -l pt
- *   ./kaikki-2-tab -i data/kaikki/pt-extract.jsonl -o - -l pt   # write to stdout
- *   ./kaikki-2-tab -c kaikki.properties
- *   ./kaikki-2-tab -c kaikki.properties -l pt,en
- * </pre>
- *
- * <br>
- * <b>Stdout:</b> use {@code -o -} to write TSV to stdout for piping into
- * {@code tab-2-xdxf}. This can also be set in the config file. All progress
- * messages are written to stderr so they do not pollute the stream.
- *
- * <br>
- * <b>Config file</b> ({@code .properties} format — CLI args override):
- * 
- * <pre>
- *   kaikki2tab.in=data/kaikki/pt-extract.jsonl
- *   kaikki2tab.out=data/kaikki-pt.tsv
- *   kaikki2tab.lang=pt
- * </pre>
- *
- * <br>
- * <b>Input format:</b> Kaikki JSONL, plain or gzip-compressed. Supported
- * extensions: {@code .jsonl}, {@code .jsonl.gz}. <br>
- * <b>Output format:</b> TSV — one entry per line:
- * {@code word&lt;TAB&gt;definition} where definition is HTML-formatted for use
- * with PocketBook via {@code dict-2-xdxf}.
- *
- * <br>
- * <b>Language filtering:</b>
- * <ul>
- * <li>{@code --lang} is mandatory (CLI or config); accepts one or more
- * comma-separated ISO 639-1 codes</li>
- * <ul>
- * <li>The first language is considered the 'From' language</li>
- * <li>The second language is considered the 'To' language. If not specified, it
- * will be the same as the 'From'</li>
- * </ul>
- * <li>Entries whose {@code lang_code} does not correspond to the 'From'
- * language are skipped</li>
- * </ul>
- *
- * <br>
+ * <p>
  * <b>Entry handling:</b>
  * <ul>
- * <li>Form-of entries (conjugations, plurals) are included with a minimal
- * one-line definition</li>
+ * <li>Form-of entries (conjugations, plurals) get a short definition</li>
  * <li>Regular entries include: part of speech, gender, plural forms (nouns
  * only), etymology, numbered senses with domain labels and examples, and
  * expressions</li>
  * <li>Verb entries suppress the {@code forms} list to avoid showing
  * conjugations</li>
- * <li>Domain labels are taken from {@code raw_tags}, falling back to
- * {@code topics}</li>
- * <li>Compound expressions appear both inside the parent entry definition
- * (under <i>Expressões</i>) and as standalone TSV entries for direct
- * lookup</li>
+ * <li>Domain labels are taken from {@code topics}, falling back to
+ * {@code raw_tags}</li>
+ * <li>Expressions are emitted inside the parent definition, as standalone
+ * entries, or both, according to {@code --embedded-defs}</li>
  * <li>Entries with no senses are skipped</li>
  * </ul>
- *
- * <br>
- * <b>Requirements:</b> Java 17+ JDK ({@code java} must be on PATH)
  */
 public class ConvKaikki2Tab {
 
@@ -130,7 +76,8 @@ public class ConvKaikki2Tab {
 	}
 
 	static void errRaw(String msg, Object... args) {
-		System.err.println(String.format(msg, args));
+		// only format when arguments are given: pre-built messages may contain a literal '%'
+		System.err.println(args.length == 0 ? msg : String.format(msg, args));
 	}
 
 	// ── main ──────────────────────────────────────────────────────────────────
@@ -831,42 +778,51 @@ public class ConvKaikki2Tab {
 
 	// --- Argument parser ---
 
+	/**
+	 * Maps a command line word to its option key, or {@code null} when it is not
+	 * an option of this tool. Used by {@link ArgsHelper#parse} both to read options
+	 * and to detect an option given where a value was expected.
+	 */
+	static String optionKey(String arg) {
+		return switch (arg) {
+		case "--config", "-c"        -> "config";
+		case "--in", "-i"            -> "in";
+		case "--out", "-o"           -> "out";
+		case "--lang", "-l"          -> "lang";
+		case "--embedded-defs", "-e" -> "embedded-defs";
+		default -> null;
+		};
+	}
+
 	static Map<String, String> parseArgs(String[] args) {
-		var map = new LinkedHashMap<String, String>();
-		for (int i = 0; i < args.length; i++) {
-			switch (args[i]) {
-			case "--config", "-c" -> map.put("config", args[++i]);
-			case "--in", "-i" -> map.put("in", args[++i]);
-			case "--out", "-o" -> map.put("out", args[++i]);
-			case "--lang", "-l" -> map.put("lang", args[++i]);
-			case "--embedded-defs", "-e" -> map.put("embedded-defs", args[++i]);
-			default -> err(String.format("Warning: unknown argument '%s', ignoring.", args[i]));
-			}
-		}
-		return map;
+		return ArgsHelper.parse(args, ConvKaikki2Tab::optionKey, er -> err(er), () -> usage());
 	}
 
 	static String usage() {
 		return """
-				Convert dictionary data from Kaikki sources to TSV
+				Convert a Kaikki (Wiktionary) JSONL dump to TSV (word<TAB>definition).
 
-				Usage: kaikki-2-tab --in|-i <input.jsonl[.gz]> --out|-o <output.tsv|-> --lang|-l <code[,code...]>
-				                   [--embedded-defs|-e KEEP|SEPARATE|BOTH] [--config|-c <config.properties>]
+				Usage:
+				  linux/kaikki-2-tab -i <jsonl[.gz]> -o <tsv> -l <lang> [options]
 
-				--in            accepts .jsonl or .jsonl.gz files.
-				--out           accepts a file path or - for stdout.
-				--lang          accepts 'source' language as ISO 639-1 language codes."
-				--embedded-defs controls how expressions are emitted (default: BOTH):
-				    KEEP     — expressions appear only embedded inside the parent word's definition.
-				    SEPARATE — expressions are emitted only as their own standalone entries.
-				    BOTH     — both embedded and standalone (default).
+				Required:
+				  -i / --in             Kaikki .jsonl or .jsonl.gz file
+				  -o / --out            Output TSV file, or - for stdout
+				  -l / --lang           Language of the headwords to keep, as one ISO 639-1
+				                        code (e.g. pt, en); entries in other languages are skipped
 
-				CLI arguments override values from the config file (namespace: kaikki2tab.*).
+				Optional:
+				  -e / --embedded-defs  How expressions are emitted (default: BOTH):
+				                          KEEP     — only embedded in the parent word's definition
+				                          SEPARATE — only as their own standalone entries
+				                          BOTH     — both embedded and standalone
+				  -c / --config         .properties config file (namespace: kaikki2tab.*);
+				                        command-line options override it
 
-				Example:
-				  kaikki-2-tab -i data/kaikki/pt-extract.jsonl -o data/out/kaikki-pt.tsv -l pt
-				  kaikki-2-tab -i data/kaikki/pt-extract.jsonl -o - -l pt -t pt -e SEPARATE | tab-2-xdxf -i - ...
-				  kaikki-2-tab -c kaikki.properties
+				Examples:
+				  linux/kaikki-2-tab -i data/kaikki/kaikki.org-all-to-Portuguese.jsonl.gz -o data/out/kaikki-pt.tsv -l pt
+				  linux/kaikki-2-tab -i data/kaikki/kaikki.org-all-to-Portuguese.jsonl.gz -o - -l pt -e SEPARATE | linux/tab-2-xdxf -i - ...
+				  linux/kaikki-2-tab -c confs/kaikki2xdxf-pt-pt.config
 				""";
 	}
 
