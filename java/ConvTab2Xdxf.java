@@ -168,7 +168,7 @@ public class ConvTab2Xdxf {
 		case "--lang", "-l"     -> "lang";
 		case "--lang-to", "-t"  -> "lang-to";
 		case "--name", "-n"     -> "name";
-		case "--desc", "-d"     -> "desc";
+		case "--desc"           -> "desc";
 		case "--validate", "-v" -> "validate";
 		default -> null;
 		};
@@ -194,7 +194,7 @@ public class ConvTab2Xdxf {
 
 				Optional:
 				  -t / --lang-to   Language of the definitions, ISO 639-1 code (default: --lang)
-				  -d / --desc      Dictionary description (default: --name)
+				       --desc      Dictionary description (default: --name)
 				  -v / --validate  true|false — validate the XML output (default: true);
 				                   with -o - it is validated in a temp file before streaming
 				  -c / --config    .properties config file (namespace: tab2xdxf.*);

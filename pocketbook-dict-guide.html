@@ -797,7 +797,7 @@ tab2xdxf.name=Wiktionário PT-&gt;PT (ReaderDict)</pre>
 <span class="cmd">linux/chain-kaikki-2-xdxf</span> <span class="arg">confs/kaikki2xdxf-pt-pt.config</span>
 <span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/kaikki-pt-pt13.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-pt-pt13.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-m</span> <span class="arg">ALWAYS</span></pre>
         <div class="note">
-          <strong>Language files:</strong> read from <code>lang/&lt;lang&gt;</code> by default (<code>lang/pt</code> for <code>-l pt</code>); use <code>-d &lt;dir&gt;</code> for another folder. It must contain <code>collates.txt</code>, <code>keyboard.txt</code>, and <code>morphems.txt</code> — see step 2.<br>
+          <strong>Language files:</strong> read from <code>lang/&lt;lang&gt;</code> by default (<code>lang/pt</code> for <code>-l pt</code>); use <code>-D &lt;dir&gt;</code> for another folder. It must contain <code>collates.txt</code>, <code>keyboard.txt</code>, and <code>morphems.txt</code> — see step 2.<br>
           <strong>Dictionary name:</strong> taken from the XDXF header; <code>-n</code> overrides it.<br>
           <strong>--merge-defs / -m (required):</strong> controls how duplicate headwords are handled.
           <code>ALWAYS</code> — headword match is case-insensitive; different definitions are merged (blank line between them), identical entries are dropped. Recommended for Kaikki sources.
@@ -818,7 +818,7 @@ tab2xdxf.name=Wiktionário PT-&gt;PT (ReaderDict)</pre>
         <p class="step-desc">
           <code>check-pbdic</code> compares the generated <code>.dic</code> against the source XDXF, checking entry count, headword presence, sort order, and a sampled spot-check of definitions.
         </p>
-        <pre><span class="cmd">linux/check-pbdic</span> <span class="flag">-x</span> <span class="arg">data/out/kaikki-pt.xdxf</span> <span class="flag">-d</span> <span class="arg">data/out/kaikki-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-n</span> <span class="arg">50</span></pre>
+        <pre><span class="cmd">linux/check-pbdic</span> <span class="flag">-x</span> <span class="arg">data/out/kaikki-pt.xdxf</span> <span class="flag">-d</span> <span class="arg">data/out/kaikki-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-s</span> <span class="arg">50</span></pre>
         <div class="note">
           Exits with code <code>0</code> on success, <code>1</code> if any check fails — suitable for use in a build script or CI pipeline.
         </div>

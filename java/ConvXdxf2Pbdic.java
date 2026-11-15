@@ -601,7 +601,7 @@ public class ConvXdxf2Pbdic {
 		case "--in", "-i"         -> "in";
 		case "--out", "-o"        -> "out";
 		case "--lang", "-l"       -> "lang";
-		case "--langdir", "-d"    -> "langdir";
+		case "--langdir", "-D"    -> "langdir";
 		case "--name", "-n"       -> "name";
 		case "--merge-defs", "-m" -> "merge-defs";
 		default -> null;
@@ -649,7 +649,7 @@ public class ConvXdxf2Pbdic {
 				                       NEVER  — never merge; only drop byte-identical duplicates
 
 				Optional:
-				  -d / --langdir     Language files dir with collates.txt, morphems.txt, keyboard.txt
+				  -D / --langdir     Language files dir with collates.txt, morphems.txt, keyboard.txt
 				                     (default: lang/<lang>)
 				  -n / --name        Dictionary title (default: name in the XDXF header,
 				                     else the output path without extension)

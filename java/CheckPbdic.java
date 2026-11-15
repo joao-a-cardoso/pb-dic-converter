@@ -654,7 +654,7 @@ public class CheckPbdic {
 		case "--dic", "-d"     -> "dic";
 		case "--lang", "-l"    -> "lang";
 		case "--langdir", "-D" -> "langdir";
-		case "--sample", "-n"  -> "sample";
+		case "--sample", "-s"  -> "sample";
 		default -> null;
 		};
 	}
@@ -676,7 +676,7 @@ public class CheckPbdic {
 				  -l / --lang      Language code (e.g. pt, en); selects the language files
 
 				Optional:
-				  -n / --sample    Number of entries whose definitions are spot-checked (default: 20)
+				  -s / --sample    Number of entries whose definitions are spot-checked (default: 20)
 				  -D / --langdir   Language files dir with collates.txt (default: lang/<lang>)
 				  -c / --config    .properties config file (namespace: checkpbdic.*);
 				                   command-line options override it

@@ -14,8 +14,12 @@ import java.util.zip.Deflater;
  * custom gzip extra field ("RA"). This allows sdcv / KOReader to seek
  * directly to any entry without decompressing the whole file.
  *
- * Each chunk is compressed independently with its own Deflater instance,
- * so sdcv can decompress any chunk in isolation after seeking to it.
+ * As in the reference dictzip, the whole input is one deflate stream:
+ * each chunk boundary is a FULL_FLUSH (byte-aligned, compression history
+ * reset), so a reader can start inflating at any chunk after seeking to
+ * it, and only the last chunk ends with the final deflate block. The file
+ * is therefore also a plain gzip file that gzip / zcat / GZIPInputStream
+ * can read from start to end.
  *
  * Reference: RFC 1952 (gzip) + dictzip source (dict-1.x).
  */
@@ -36,33 +40,48 @@ public class DictzipUtil {
    */
   public static void write(byte[] input, OutputStream out) throws IOException {
 
-    // ── 1. Compress each chunk independently ─────────────────────────────
+    // ── 1. Compress: one deflate stream, FULL_FLUSH at each chunk end ────
     List<byte[]> chunks = new ArrayList<>();
 
-    int total = input.length == 0 ? 0 : (input.length + CHUNK_SIZE - 1) / CHUNK_SIZE;
+    // at least one chunk, so an empty input still yields a valid stream
+    int total = Math.max(1, (input.length + CHUNK_SIZE - 1) / CHUNK_SIZE);
 
-    for (int i = 0; i < total; i++) {
-      int off = i * CHUNK_SIZE;
-      int len = Math.min(CHUNK_SIZE, input.length - off);
+    Deflater deflater = new Deflater(Deflater.DEFAULT_COMPRESSION, true); // raw deflate
+    byte[] buf = new byte[CHUNK_SIZE + 1024];
+    try {
+      for (int i = 0; i < total; i++) {
+        int off = i * CHUNK_SIZE;
+        int len = Math.min(CHUNK_SIZE, input.length - off);
+        boolean last = i == total - 1;
 
-      // Fresh Deflater per chunk — each chunk is independently decompressible
-      Deflater deflater = new Deflater(Deflater.DEFAULT_COMPRESSION, true); // nowrap
-      deflater.setInput(input, off, len);
-      deflater.finish();
+        deflater.setInput(input, off, len);
+        ByteArrayOutputStream chunkBuf = new ByteArrayOutputStream();
+        if (last) {
+          // final block: ends the deflate stream
+          deflater.finish();
+          while (!deflater.finished()) {
+            int n = deflater.deflate(buf);
+            chunkBuf.write(buf, 0, n);
+          }
+        } else {
+          // FULL_FLUSH: emit all pending output, byte-align and reset the
+          // history, so this chunk boundary is a valid restart point.
+          // A full buffer means there may be more output, so call again.
+          int n;
+          do {
+            n = deflater.deflate(buf, 0, buf.length, Deflater.FULL_FLUSH);
+            chunkBuf.write(buf, 0, n);
+          } while (n == buf.length);
+        }
 
-      byte[] buf = new byte[len + 128];
-      ByteArrayOutputStream chunkBuf = new ByteArrayOutputStream();
-      while (!deflater.finished()) {
-        int n = deflater.deflate(buf);
-        chunkBuf.write(buf, 0, n);
+        byte[] compressed = chunkBuf.toByteArray();
+        if (compressed.length > 0xFFFF)
+          throw new IOException("Chunk too large for dictzip 16-bit size field: "
+              + compressed.length);
+        chunks.add(compressed);
       }
+    } finally {
       deflater.end();
-
-      byte[] compressed = chunkBuf.toByteArray();
-      if (compressed.length > 0xFFFF)
-        throw new IOException("Chunk too large for dictzip 16-bit size field: "
-            + compressed.length);
-      chunks.add(compressed);
     }
 
     // ── 2. CRC32 of original input ────────────────────────────────────────

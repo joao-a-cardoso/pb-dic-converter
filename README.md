@@ -100,10 +100,10 @@ Available configs:
 |------|-------|--------|--------------|
 | `stardict-2-tab`  | StarDict `.ifo` (`.idx`/`.dict.dz` found alongside) | TSV | `-i`, `-o` |
 | `kaikki-2-tab`    | Kaikki `.jsonl` / `.jsonl.gz` | TSV | `-i`, `-o`, `-l <iso2>`, `-e KEEP\|SEPARATE\|BOTH` (default `BOTH`) |
-| `tab-2-xdxf`      | TSV | XDXF (XML-validated) | `-i`, `-o`, `-l`, `-t <lang-to>` (default `-l`), `-n <name>`, `-d <desc>` (default name), `-v true\|false` (default `true`) |
-| `xdxf-2-pbdic`    | XDXF + language files | `.dic` | `-i`, `-o`, `-l`, `-m ALWAYS\|EXACT\|NEVER`, `-d <langdir>` (default `lang/<lang>`), `-n <name>` |
+| `tab-2-xdxf`      | TSV | XDXF (XML-validated) | `-i`, `-o`, `-l`, `-t <lang-to>` (default `-l`), `-n <name>`, `--desc <desc>` (default name), `-v true\|false` (default `true`) |
+| `xdxf-2-pbdic`    | XDXF + language files | `.dic` | `-i`, `-o`, `-l`, `-m ALWAYS\|EXACT\|NEVER`, `-D <langdir>` (default `lang/<lang>`), `-n <name>` |
 | `xdxf-2-stardict` | XDXF | StarDict directory (`stardict.ifo/.idx/.dict[.dz]`) | `-i`, `-o <dir>`, `-m ALWAYS\|EXACT\|NEVER`, `-z true\|false` (compress), `-n <name>` |
-| `check-pbdic`     | `.dic` + `.xdxf` | Validation report (exit 1 on failure) | `-x`, `-d`, `-l`, `-D <langdir>` (default `lang/<lang>`), `-n <samples>` (default 20) |
+| `check-pbdic`     | `.dic` + `.xdxf` | Validation report (exit 1 on failure) | `-x`, `-d`, `-l`, `-D <langdir>` (default `lang/<lang>`), `-s <samples>` (default 20) |
 
 Every tool accepts `-c <config>` and `--help`. Progress messages go to stderr, so stdout is safe for piping.
 
