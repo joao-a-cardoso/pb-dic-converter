@@ -11,4 +11,4 @@ if [ ! -f "$1" ]; then
   exit 1
 fi
 
-linux/kaikki-2-tab -c "$1" | linux/tab-2-xdxf -c "$1"
+linux/kaikki-2-tab -c "$1" | linux/tab-2-xdxf -c "$1" -v true

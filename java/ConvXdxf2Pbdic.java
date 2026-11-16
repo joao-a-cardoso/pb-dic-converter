@@ -1,655 +1,666 @@
-import java.io.*;
+
+import static shared.XmlHelper.decodeEntities;
+
+import java.io.BufferedOutputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
-import java.util.*;
-import java.util.zip.*;
-import javax.xml.parsers.*;
-import org.xml.sax.*;
-import org.xml.sax.helpers.DefaultHandler;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.TreeMap;
+import java.util.zip.Deflater;
+
+import shared.ArgsHelper;
+import shared.Constants;
+import shared.XdxfHelper;
+import shared.XdxfHelper.ParsedEntry;
+import shared.XdxfHelper.XdxfHeader;
 
 /**
- * xdxf-2-pbdic — convert an XDXF dictionary to PocketBook's native .dic (SDIC) format.
+ * xdxf-2-pbdic — convert an XDXF dictionary to PocketBook's native .dic
+ * (SDIC) format.
  *
- * Usage:
- *   linux/xdxf-2-pbdic -i data/out/dict-pt.xdxf -o data/out/dict-pt.dic -l pt [-d lang/pt] [-n "My Dict"] [-c dict.properties]
+ * <p>
+ * For usage, options and examples run {@code linux/xdxf-2-pbdic --help}.
  *
- * Required:
- *   -i / --in       Input XDXF file
- *   -o / --out      Output .dic file
- *   -l / --lang     Language code (e.g. pt, en) — used to locate language dir
- *
- * Optional:
- *   -d / --langdir  Language files directory (default: lang/<lang>/)
- *   -n / --name     Dictionary title (default: input filename without extension)
- *   -c / --config   Shared .properties config file (namespace: xdxf2dic.*)
- *
+ * <p>
  * Language files (collates.txt, morphems.txt, keyboard.txt):
- *   https://github.com/Markismus/LanguageFilesPocketbookConverter
+ * https://github.com/Markismus/LanguageFilesPocketbookConverter
  *
- * SDIC format constants:
- *   0x02 = begin bold   0x03 = begin italic   0x01 = end span   0x0a = newline
+ * <p>
+ * SDIC definition bytecodes: 0x02 = begin bold, 0x03 = begin italic, 0x01 =
+ * end span, 0x0a = newline. Format details: {@code docs/sdic_format.pdf}.
  */
-class ConvXdxfToDic {
+public class ConvXdxf2Pbdic {
 
-    // ── SDIC format constants ─────────────────────────────────────────────────
-    static final byte[] MAGIC        = "SDIC".getBytes(StandardCharsets.US_ASCII);
-    static final int    VERSION      = 0x00000101;
-    static final int    UNKNOWN_0C   = 0x0000FFFC;
-    static final int    HEADER_SIZE  = 0x80;
+	// ── SDIC format constants ─────────────────────────────────────────────────
+	static final byte[] MAGIC = "SDIC".getBytes(StandardCharsets.US_ASCII);
+	static final int VERSION = 0x00000101;
+	static final int UNKNOWN_0C = 0x0000FFFC;
+	static final int HEADER_SIZE = 0x80;
 
-    static final byte   FMT_END      = 0x01;
-    static final byte   FMT_BOLD     = 0x02;
-    static final byte   FMT_ITALIC   = 0x03;
-    static final byte   FMT_NEWLINE  = 0x0a;
-    static final byte[] BULLET       = "\u2022 ".getBytes(StandardCharsets.UTF_8);
+	static final byte FMT_END = 0x01;
+	static final byte FMT_BOLD = 0x02;
+	static final byte FMT_ITALIC = 0x03;
+	static final byte FMT_NEWLINE = 0x0a;
+	static final byte[] FMT_BULLET = (String.valueOf(Constants.UC_BULLET) + " ").getBytes(StandardCharsets.UTF_8);
 
-    static final int    TARGET_BLOCK_COMPRESSED   = 4_096;  // match converter.exe: target compressed size ≤ 4096 bytes
-    static final int    TARGET_BLOCK_DECOMPRESSED = 27_000; // hard ceiling on decompressed block size (firmware buffer)
-    static final int    TARGET_BLOCK_ENTRIES      = 110;    // ~110 entries/block keeps index_dsz ~51k, safely under 55k firmware limit
+	static final int TARGET_BLOCK_COMPRESSED = 4_096; // match converter.exe: target compressed size ≤ 4096 bytes
+	static final int TARGET_BLOCK_DECOMPRESSED = 27_000; // hard ceiling on decompressed block size (firmware buffer)
+	static final int TARGET_BLOCK_ENTRIES = 110; // ~110 entries/block keeps index_dsz ~51k, safely under 55k firmware
+													// limit
 
-    // ── Entry ─────────────────────────────────────────────────────────────────
-    record Entry(String word, byte[] definition) {
-        int serialisedLength() {
-            return 2 + word.getBytes(StandardCharsets.UTF_8).length + 1 + definition.length + 1;
-        }
-    }
+	// ── main ──────────────────────────────────────────────────────────────────
+	public static void main(String[] args) throws Exception {
+		if (args.length == 0) { // -h / --help is handled by ArgsHelper.parse
+			ArgsHelper.displayUsage(ConvXdxf2Pbdic::usage, System.err);
+			System.exit(1);
+		}
 
-    // ── main ──────────────────────────────────────────────────────────────────
-    public static void main(String[] args) throws Exception {
-        if (args.length == 0 || Arrays.asList(args).contains("--help")) {
-            printUsage(); System.exit(0);
-        }
+		var cli = parseArgs(args);
+		var argsHlp = new ArgsHelper(TOOL, "xdxf2pcdic", er -> err(er), () -> usage());
+		String configPath = cli.get("config");
+		Properties config = argsHlp.loadProperties(configPath, true);
+		argsHlp.mergeConfig2Cli(List.of("in", "out", "lang", "langdir", "name", "merge-defs"), cli, config);
 
-        var config = parseArgs(args);
+		String inPath = argsHlp.require(cli, "in", "--in/-i");
+		String outPath = argsHlp.require(cli, "out", "--out/-o");
+		String lang = argsHlp.requireLang(cli, "lang", "--lang/-l");
+		String langDir = argsHlp.resolve(cli, "langdir", "lang/" + lang);
+		String name = argsHlp.resolve(cli, "name", null);
 
-        String inPath  = require(config, "in",   "--in  : input XDXF file");
-        String outPath = require(config, "out",  "--out : output .dic file");
-        String lang    = require(config, "lang", "--lang: language code, e.g. pt");
-        String langDir = resolve(config, "langdir", "lang/" + lang);
-        String name    = resolve(config, "name", null);
+		boolean fromStdin = "-".equals(inPath);
+		Path xdxfPath = fromStdin ? null : Path.of(inPath);
+		Path dicFile = Path.of(outPath);
+		Path langDirPath = Path.of(langDir);
 
-        boolean fromStdin = "-".equals(inPath);
-        Path xdxfFile    = fromStdin ? null : Path.of(inPath);
-        Path dicFile     = Path.of(outPath);
-        Path langDirPath = Path.of(langDir);
+		if (!fromStdin && !Files.exists(xdxfPath)) {
+			abort(String.format("Error: input file not found: %s", xdxfPath));
+		}
+		if (!Files.isDirectory(langDirPath)) {
+			err(String.format("Error: language directory not found: %s", langDirPath));
+			errRaw("       Download from: https://github.com/Markismus/LanguageFilesPocketbookConverter");
+			System.exit(1);
+		}
 
-        if (!fromStdin && !Files.exists(xdxfFile)) {
-            err(String.format("Error: input file not found: %s", xdxfFile)); System.exit(1);
-        }
-        if (!Files.isDirectory(langDirPath)) {
-            err(String.format("Error: language directory not found: %s", langDirPath));
-            errRaw("       Download from: https://github.com/Markismus/LanguageFilesPocketbookConverter");
-            System.exit(1);
-        }
+		String mergeDefs = argsHlp.requireUC(cli, "merge-defs", "--merge-defs/-m");
+		mergeDefs = mergeDefs.toUpperCase();
+		if (!mergeDefs.equals("ALWAYS") && !mergeDefs.equals("EXACT") && !mergeDefs.equals("NEVER")) {
+			abort(String.format("Error: -m / --merge-defs must be ALWAYS, EXACT or NEVER, got: %s", mergeDefs));
+		}
 
-        if (name == null) {
-            if (fromStdin) { name = "dictionary"; }
-            else { String fname = xdxfFile.getFileName().toString();
-                   name = fname.contains(".") ? fname.substring(0, fname.lastIndexOf('.')) : fname; }
-        }
+		cli.put("merge-defs", mergeDefs);
+		argsHlp.listProperties(cli);
 
-        String cp = config.get("config");
-        String mergeVal = config.get("merge-defs");
-        if (mergeVal == null) {
-            err("Error: missing required argument -m / --merge-defs ALWAYS|EXACT|NEVER");
-            errRaw("  ALWAYS -- merge headwords that match case-insensitively; drop identical entries");
-            errRaw("  EXACT  -- merge headwords that match exactly (case-sensitive); drop identical entries");
-            errRaw("  NEVER  -- never merge; only drop byte-identical duplicates");
-            System.exit(1);
-        }
-        mergeVal = mergeVal.toUpperCase();
-        if (!mergeVal.equals("ALWAYS") && !mergeVal.equals("EXACT") && !mergeVal.equals("NEVER")) {
-            err(String.format("Error: -m / --merge-defs must be ALWAYS, EXACT or NEVER, got: %s", mergeVal));
-            System.exit(1);
-        }
-        final String joinMode = mergeVal;
-        err("Configuration:");
-        errRaw(String.format("  input   : %s", (fromStdin ? "<stdin>" : xdxfFile)));
-        errRaw(String.format("  output  : %s", dicFile));
-        errRaw(String.format("  lang    : %s", lang));
-        errRaw(String.format("  langdir : %s", langDirPath));
-        errRaw(String.format("  name    : %s", name));
-        errRaw(String.format("  merge-defs: %s", joinMode));
-        if (cp != null) errRaw(String.format("  config  : %s", cp));
-        err("");
+		// 1. Language files
+		var collation = loadCollation(langDirPath.resolve("collates.txt"));
+		byte[] morphem = readAsUtf16Le(langDirPath.resolve("morphems.txt"));
+		byte[] keyboard = Files.readAllBytes(langDirPath.resolve("keyboard.txt"));
+		err(String.format("Language files loaded. %d collation pairs.", collation.size()));
 
-        // 1. Language files
-        var collation    = loadCollation(langDirPath.resolve("collates.txt"));
-        byte[] morphem   = readAsUtf16Le(langDirPath.resolve("morphems.txt"));
-        byte[] keyboard  = Files.readAllBytes(langDirPath.resolve("keyboard.txt"));
-        err(String.format("Language files loaded. %d collation pairs.", collation.size()));
+		// 2. Parse XDXF
+		err("Parsing...");
+		var header = new XdxfHeader[1];
+		var entries = new ArrayList<ParsedEntry>();
+		try (InputStream input = fromStdin ? System.in : Files.newInputStream(xdxfPath)) {
+			int count = XdxfHelper.parseXdxf(input, //
+					ConvXdxf2Pbdic::htmlToSdic, //
+					hdr -> header[0] = hdr, //
+					entries::add);
+			err(String.format("read %d entries.", count));
+		}
 
-        // 2. Parse XDXF
-        err("Parsing...");
-        var entries = fromStdin
-            ? parseXdxf(System.in)
-            : parseXdxf(new FileInputStream(xdxfFile.toFile()));
-        err(String.format("read %d entries.", entries.size()));
+		// Use data from the header
+		if (header[0] != null) {
+			if (name == null || name.isBlank()) { // read the dict name from the header
+				name = header[0].name();
+			}
+		}
 
-        // 3. Sort by collated headword
-        err("Sorting...");
-        entries.sort(Comparator.comparing(e -> collatedKey(e.word(), collation)));
+		// there is no name, derive it from the output file name
+		if (name == null || name.isBlank()) {
+			name = ArgsHelper.baseName(outPath);
+		}
 
-        // 4. Merge/dedup headwords according to -m / --merge-defs mode:
-        //    ALWAYS — headword match is case-insensitive; merge different defs, drop identical
-        //    EXACT  — headword match is case-sensitive;   merge different defs, drop identical
-        //    NEVER  — headword match is case-sensitive;   never merge, only drop byte-identical duplicates
-        err("Merging duplicates...");
-        var merged = new ArrayList<Entry>(entries.size());
-        for (Entry e : entries) {
-            if (!merged.isEmpty()) {
-                Entry prev = merged.get(merged.size()-1);
-                boolean sameWord = joinMode.equals("ALWAYS")
-                    ? prev.word().equalsIgnoreCase(e.word())
-                    : prev.word().equals(e.word());
-                if (sameWord) {
-                    boolean sameDef = Arrays.equals(prev.definition(), e.definition());
-                    if (!sameDef && !joinMode.equals("NEVER")) {
-                        merged.remove(merged.size()-1);
-                        // ALWAYS: keep lowercase headword; EXACT: keep first
-                        String keepWord = joinMode.equals("ALWAYS")
-                            ? (prev.word().equals(prev.word().toLowerCase(java.util.Locale.ROOT))
-                                ? prev.word() : e.word())
-                            : prev.word();
-                        merged.add(new Entry(keepWord, joinDefsBlankLine(prev.definition(), e.definition())));
-                    } else if (sameDef) {
-                        // byte-identical duplicate — discard silently
-                    } else {
-                        // NEVER mode, different defs — keep both
-                        merged.add(e);
-                        continue;
-                    }
-                    continue;
-                }
-            }
-            merged.add(e);
-        }
-        int mergedCount = entries.size() - merged.size();
-        if (mergedCount > 0) err(String.format("Merged/deduped %d entries (merge-defs=%s)", mergedCount, joinMode));
-        entries = merged;
+		// 3. Sort by collated headword
+		err("Sorting...");
+		entries.sort(Comparator.comparing(e -> collatedKey(e.word(), collation)));
 
-        // 5. Pack into blocks
-        err("Packing...");
-        var blocks = packBlocks(entries);
-        err(String.format("Packed. %d blocks.", blocks.size()));
+		// 4. Merge/dedup headwords according to -m / --merge-defs mode:
+		// ALWAYS — headword match is case-insensitive; merge different defs, drop
+		// identical
+		// EXACT — headword match is case-sensitive; merge different defs, drop
+		// identical
+		// NEVER — headword match is case-sensitive; never merge, only drop
+		// byte-identical duplicates
+		err("Merging duplicates...");
+		var merged = new ArrayList<ParsedEntry>(entries.size());
+		for (ParsedEntry e : entries) {
+			if (!merged.isEmpty()) {
+				ParsedEntry prev = merged.get(merged.size() - 1);
+				boolean sameWord = mergeDefs.equals("ALWAYS") ? prev.word().equalsIgnoreCase(e.word())
+						: prev.word().equals(e.word());
+				if (sameWord) {
+					boolean sameDef = Arrays.equals(prev.definition(), e.definition());
+					if (!sameDef && !mergeDefs.equals("NEVER")) {
+						merged.remove(merged.size() - 1);
+						// ALWAYS: keep lowercase headword; EXACT: keep first
+						String keepWord = mergeDefs.equals("ALWAYS")
+								? (prev.word().equals(prev.word().toLowerCase(java.util.Locale.ROOT)) ? prev.word()
+										: e.word())
+								: prev.word();
+						merged.add(new ParsedEntry(keepWord, joinDefsBlankLine(prev.definition(), e.definition())));
+					} else if (sameDef) {
+						// byte-identical duplicate — discard silently
+					} else {
+						// NEVER mode, different defs — keep both
+						merged.add(e);
+						continue;
+					}
+					continue;
+				}
+			}
+			merged.add(e);
+		}
+		int mergedCount = entries.size() - merged.size();
+		if (mergedCount > 0)
+			err(String.format("Merged/deduped %d entries (merge-defs=%s)", mergedCount, mergeDefs));
+		entries = merged;
 
-        // 5. Write .dic
-        err("Writing...");
-        if (dicFile.getParent() != null) Files.createDirectories(dicFile.getParent());
-        writeDic(dicFile, name, entries.size(), collation, morphem, keyboard, blocks);
+		// 5. Pack into blocks
+		err("Packing...");
+		var blocks = packBlocks(entries);
+		err(String.format("Packed. %d blocks.", blocks.size()));
 
-        err(String.format("%d entries written to %s.", entries.size(), dicFile));
-    }
+		// 5. Write .dic
+		err("Writing...");
+		if (dicFile.getParent() != null)
+			Files.createDirectories(dicFile.getParent());
+		writeDic(dicFile, name, entries.size(), collation, morphem, keyboard, blocks);
 
-    // ── 1. Collation table ────────────────────────────────────────────────────
+		err(String.format("%d entries written to %s.", entries.size(), dicFile));
+	}
 
-    /**
-     * Parse collates.txt into a TreeMap&lt;sourceCodepoint, normalisedCodepoint&gt;.
-     * First line = ignored chars (map to 0). Subsequent lines: chars=BASE.
-     */
-    static TreeMap<Integer,Integer> loadCollation(Path file) throws IOException {
-        var map = new TreeMap<Integer,Integer>();
-        String[] lines = Files.readString(file, StandardCharsets.UTF_8)
-                              .replace("\uFEFF", "")
-                              .split("\\r?\\n");
-        for (int i = 0; i < lines.length; i++) {
-            String line = lines[i].strip();
-            if (line.isEmpty()) continue;
-            if (i == 0) {
-                // Strip trailing '=' (used as field separator on other lines)
-                int eq0 = line.lastIndexOf('=');
-                String chars0 = eq0 >= 0 ? line.substring(0, eq0) : line;
-                chars0.codePoints().forEach(cp -> map.put(cp, 0));
-            } else {
-                int eq = line.lastIndexOf('=');
-                if (eq < 0 || eq == line.length() - 1) continue;
-                String chars = line.substring(0, eq);
-                int base = line.codePointAt(eq + 1);
-                chars.codePoints().forEach(cp -> map.put(cp, base));
-                map.put(base, base);
-            }
-        }
-        return map;
-    }
+	// ── 1. Collation table ────────────────────────────────────────────────────
 
-    /** Normalise a word for sorting: map codepoints, drop ignored (0). */
-    static String collatedKey(String word, Map<Integer,Integer> collation) {
-        var sb = new StringBuilder();
-        word.codePoints().forEach(cp -> {
-            int n = collation.getOrDefault(cp, cp);
-            if (n != 0) sb.appendCodePoint(n);
-        });
-        return sb.toString();
-    }
+	/**
+	 * Parse collates.txt into a TreeMap&lt;sourceCodepoint,
+	 * normalisedCodepoint&gt;. First line = ignored chars (map to 0). Subsequent
+	 * lines: chars=BASE.
+	 */
+	static TreeMap<Integer, Integer> loadCollation(Path file) throws IOException {
+		var map = new TreeMap<Integer, Integer>();
+		String[] lines = Files.readString(file, StandardCharsets.UTF_8).replace("\uFEFF", "").split("\\r?\\n");
+		for (int i = 0; i < lines.length; i++) {
+			String line = lines[i].strip();
+			if (line.isEmpty())
+				continue;
+			if (i == 0) {
+				// Strip trailing '=' (used as field separator on other lines)
+				int eq0 = line.lastIndexOf('=');
+				String chars0 = eq0 >= 0 ? line.substring(0, eq0) : line;
+				chars0.codePoints().forEach(cp -> map.put(cp, 0));
+			} else {
+				int eq = line.lastIndexOf('=');
+				if (eq < 0 || eq == line.length() - 1)
+					continue;
+				String chars = line.substring(0, eq);
+				int base = line.codePointAt(eq + 1);
+				chars.codePoints().forEach(cp -> map.put(cp, base));
+				map.put(base, base);
+			}
+		}
+		return map;
+	}
 
-    /**
-     * Serialise collation table: uint32 byte_count + array of uint32 packed entries.
-     * Each entry = (base_uppercase_char << 16) | source_codepoint, sorted by value.
-     * Punctuation (base=0): entry = source_codepoint only (high word = 0).
-     * Identity mappings (base == src) are excluded — the firmware only needs
-     * entries for chars that fold to a different base.
-     */
-    static byte[] collationToBytes(TreeMap<Integer,Integer> map) throws IOException {
-        var packed = new ArrayList<Long>();
-        for (var e : map.entrySet()) {
-            int src = e.getKey(), base = e.getValue();
-            if (src > 0xFFFF || base > 0xFFFF) continue;
-            if (src == base) continue;   // skip identity mappings (base chars)
-            packed.add(((long) base << 16) | src);
-        }
-        packed.sort(Comparator.comparingLong(v -> v & 0xFFFFL)); // sort by source codepoint
-        var out = new ByteArrayOutputStream();
-        writeU32(out, packed.size() * 4);  // byte count prefix
-        for (long v : packed) writeU32(out, (int) v);
-        return out.toByteArray();
-    }
+	/** Normalise a word for sorting: map codepoints, drop ignored (0). */
+	static String collatedKey(String word, Map<Integer, Integer> collation) {
+		var sb = new StringBuilder();
+		word.codePoints().forEach(cp -> {
+			int n = collation.getOrDefault(cp, cp);
+			if (n != 0)
+				sb.appendCodePoint(n);
+		});
+		return sb.toString();
+	}
 
-    // ── 2. XDXF parser ───────────────────────────────────────────────────────
+	/**
+	 * Serialise collation table: uint32 byte_count + array of uint32 packed
+	 * entries. Each entry = (base_uppercase_char << 16) | source_codepoint, sorted
+	 * by value. Punctuation (base=0): entry = source_codepoint only (high word =
+	 * 0). Identity mappings (base == src) are excluded — the firmware only needs
+	 * entries for chars that fold to a different base.
+	 */
+	static byte[] collationToBytes(TreeMap<Integer, Integer> map) throws IOException {
+		var packed = new ArrayList<Long>();
+		for (var e : map.entrySet()) {
+			int src = e.getKey(), base = e.getValue();
+			if (src > 0xFFFF || base > 0xFFFF)
+				continue;
+			if (src == base)
+				continue; // skip identity mappings (base chars)
+			packed.add(((long) base << 16) | src);
+		}
+		packed.sort(Comparator.comparingLong(v -> v & 0xFFFFL)); // sort by source codepoint
+		var out = new ByteArrayOutputStream();
+		writeU32(out, packed.size() * 4); // byte count prefix
+		for (long v : packed)
+			writeU32(out, (int) v);
+		return out.toByteArray();
+	}
 
-    static List<Entry> parseXdxf(InputStream stream) throws Exception {
-        var factory = SAXParserFactory.newInstance();
-        factory.setValidating(false);
-        factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+	// ── 3. HTML → SDIC bytecodes ──────────────────────────────────────────────
 
-        var entries   = new ArrayList<Entry>();
-        var headwords = new ArrayList<String>();
-        var defRaw    = new StringBuilder();
-        var kBuf      = new StringBuilder();
-        var state     = new boolean[2]; // [0]=inAr, [1]=inK
+	/**
+	 * Convert an HTML definition string to SDIC inline bytecodes. Uses a minimal
+	 * recursive-descent tokeniser — no external libraries needed.
+	 */
+	public static byte[] htmlToSdic(CharSequence csHtml) {
 
-        factory.newSAXParser().parse(stream, new DefaultHandler() {
-            @Override
-            public void startElement(String u, String l, String qName, Attributes a) {
-                switch (qName.toLowerCase()) {
-                    case "ar" -> { state[0]=true; headwords.clear(); defRaw.setLength(0); }
-                    case "k"  -> { state[1]=true; kBuf.setLength(0); }
-                    default   -> { if (state[0] && !state[1]) defRaw.append('<').append(qName.toLowerCase()).append('>'); }
-                }
-            }
-            @Override
-            public void endElement(String u, String l, String qName) {
-                switch (qName.toLowerCase()) {
-                    case "ar" -> {
-                        if (!headwords.isEmpty() && defRaw.length() > 0) {
-                            byte[] def = htmlToSdic(defRaw.toString().trim());
-                            for (String w : headwords)
-                                if (!w.isBlank()) entries.add(new Entry(w.trim(), def));
-                        }
-                        state[0] = false;
-                    }
-                    case "k" -> { headwords.add(kBuf.toString()); state[1]=false; }
-                    default  -> { if (state[0] && !state[1]) defRaw.append("</").append(qName.toLowerCase()).append('>'); }
-                }
-            }
-            @Override
-            public void characters(char[] ch, int start, int length) {
-                if (state[1]) kBuf.append(ch, start, length);
-                else if (state[0]) {
-                    String t = new String(ch, start, length);
-                    defRaw.append(t.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;"));
-                }
-            }
-            @Override public InputSource resolveEntity(String pub, String sys) {
-                return new InputSource(new StringReader(""));
-            }
-        });
-        return entries;
-    }
+		String html = csHtml == null ? "" : csHtml.toString();
 
-    // ── 3. HTML → SDIC bytecodes ──────────────────────────────────────────────
+		var out = new ByteArrayOutputStream();
+		int i = 0;
+		int len = html.length();
+		while (i < len) {
+			if (html.charAt(i) == '<') {
+				int end = html.indexOf('>', i);
+				if (end < 0) {
+					appendUtf8(out, html.substring(i));
+					break;
+				}
+				String tag = html.substring(i + 1, end).toString().trim().toLowerCase();
+				boolean closing = tag.startsWith("/");
+				boolean opening = !closing;
 
-    /**
-     * Convert an HTML definition string to SDIC inline bytecodes.
-     * Uses a minimal recursive-descent tokeniser — no external libraries needed.
-     */
-    static byte[] htmlToSdic(String html) {
-        var out = new ByteArrayOutputStream();
-        int i = 0;
-        int len = html.length();
-        while (i < len) {
-            if (html.charAt(i) == '<') {
-                int end = html.indexOf('>', i);
-                if (end < 0) { appendUtf8(out, html.substring(i)); break; }
-                String tag = html.substring(i+1, end).trim().toLowerCase();
-                boolean closing = tag.startsWith("/");
-                if (closing) tag = tag.substring(1).trim();
-                // strip attributes
-                int sp = tag.indexOf(' ');
-                if (sp > 0) tag = tag.substring(0, sp);
+				if (closing)
+					tag = tag.substring(1).trim();
+				// strip attributes
+				int sp = tag.indexOf(' ');
+				if (sp > 0)
+					tag = tag.substring(0, sp);
 
-                if (!closing) {
-                    switch (tag) {
-                        case "b", "strong" -> { out.write(FMT_BOLD); out.write(' '); }
-                        case "i", "em"     -> { out.write(FMT_ITALIC); out.write(' '); }
-                        case "br"          -> { out.write(' '); out.write(FMT_NEWLINE); }
-                        case "p", "div"    -> out.write(' ');
-                        case "li"          -> out.write(' ');
-                        case "ol", "ul"    -> { /* container — no output */ }
-                    }
-                } else {
-                    switch (tag) {
-                        case "b", "strong", "i", "em" -> { out.write(FMT_END); out.write(' '); }
-                        case "p", "div" -> {
-                            out.write(' '); out.write(FMT_NEWLINE);
-                        }
-                        case "li" -> { out.write(' '); out.write(FMT_NEWLINE); }
-                        // </ol>, </ul> — no output
-                    }
-                }
-                i = end + 1;
-            } else {
-                // Text node — skip literal newlines (formatting artefacts from tab-2-xdxf)
-                int next = html.indexOf('<', i);
-                String text = next < 0 ? html.substring(i) : html.substring(i, next);
-                text = text.replace("\n", "").replace("\r", "");
-                appendUtf8(out, decodeEntities(text));
-                i = next < 0 ? len : next;
-            }
-        }
-        byte[] trimmed = trimBytes(out.toByteArray());
-        // Post-process: enforce all firmware spacing rules:
-        //   (a) definition must start with 0x20
-        //   (b) 0x02, 0x03 must be preceded and followed by 0x20  (handled in tag rendering)
-        //   (c) 0x01 must be followed by 0x20
-        //   (d) 0x0A must be preceded by exactly one 0x20
-        //   (e) definition must end with 0x20
-        //   (f) 0x0A must be followed by exactly one 0x20 (not two or more)
-        var fixed = new ByteArrayOutputStream();
-        fixed.write(' '); // (a) leading space
-        for (int j = 0; j < trimmed.length; j++) {
-            byte b = trimmed[j];
-            // (d) insert space before 0x0A if needed
-            if (b == FMT_NEWLINE && (j == 0 || trimmed[j-1] != ' '))
-                fixed.write(' ');
-            fixed.write(b);
-            // (c) insert space after 0x01 if needed
-            if (b == FMT_END && (j+1 >= trimmed.length || trimmed[j+1] != ' '))
-                fixed.write(' ');
-            // (f) after 0x0A, skip extra spaces so exactly one follows
-            if (b == FMT_NEWLINE) {
-                // write exactly one space, then skip any additional spaces
-                fixed.write(' ');
-                while (j+1 < trimmed.length && trimmed[j+1] == ' ') j++;
-            }
-        }
-        // (e) trailing space
-        var result = fixed.toByteArray();
-        if (result.length == 0 || result[result.length-1] != ' ')
-            fixed.write(' ');
-        return fixed.toByteArray();
-    }
+				if (opening) {
+					switch (tag) {
+					case "b", "strong" -> {
+						out.write(FMT_BOLD);
+						out.write(' ');
+					}
+					case "i", "em" -> {
+						out.write(FMT_ITALIC);
+						out.write(' ');
+					}
+					case "br" -> {
+						out.write(' ');
+						out.write(FMT_NEWLINE);
+					}
+					case "p", "div" -> out.write(' ');
+					case "li" -> out.writeBytes(FMT_BULLET);
+					case "ol", "ul" -> {
+						/* container — no output */ }
+					}
+				} else {
+					switch (tag) {
+					case "b", "strong", "i", "em" -> {
+						out.write(FMT_END);
+						out.write(' ');
+					}
+					case "p", "div" -> {
+						out.write(' ');
+						out.write(FMT_NEWLINE);
+					}
+					case "li" -> {
+						out.write(' ');
+						out.write(FMT_NEWLINE);
+					}
+					// </ol>, </ul> — no output
+					}
+				}
+				i = end + 1;
+			} else {
+				// Text node — skip literal newlines (formatting artefacts from tab-2-xdxf)
+				int next = html.indexOf('<', i);
+				String text = next < 0 ? html.substring(i) : html.substring(i, next);
+				text = text.replace("\n", "").replace("\r", "");
+				appendUtf8(out, decodeEntities(text));
+				i = next < 0 ? len : next;
+			}
+		}
+		byte[] trimmed = trimBytes(out.toByteArray());
+		// Post-process: enforce all firmware spacing rules:
+		// (a) definition must start with 0x20
+		// (b) 0x02, 0x03 must be preceded and followed by 0x20 (handled in tag
+		// rendering)
+		// (c) 0x01 must be followed by 0x20
+		// (d) 0x0A must be preceded by exactly one 0x20
+		// (e) definition must end with 0x20
+		// (f) 0x0A must be followed by exactly one 0x20 (not two or more)
+		var fixed = new ByteArrayOutputStream();
+		fixed.write(' '); // (a) leading space
+		for (int j = 0; j < trimmed.length; j++) {
+			byte b = trimmed[j];
+			// (d) insert space before 0x0A if needed
+			if (b == FMT_NEWLINE && (j == 0 || trimmed[j - 1] != ' '))
+				fixed.write(' ');
+			fixed.write(b);
+			// (c) insert space after 0x01 if needed
+			if (b == FMT_END && (j + 1 >= trimmed.length || trimmed[j + 1] != ' '))
+				fixed.write(' ');
+			// (f) after 0x0A, skip extra spaces so exactly one follows
+			if (b == FMT_NEWLINE) {
+				// write exactly one space, then skip any additional spaces
+				fixed.write(' ');
+				while (j + 1 < trimmed.length && trimmed[j + 1] == ' ')
+					j++;
+			}
+		}
+		// (e) trailing space
+		var result = fixed.toByteArray();
+		if (result.length == 0 || result[result.length - 1] != ' ')
+			fixed.write(' ');
+		return fixed.toByteArray();
+	}
 
-    static void appendUtf8(ByteArrayOutputStream out, String s) {
-        out.writeBytes(s.getBytes(StandardCharsets.UTF_8));
-    }
+	static void appendUtf8(ByteArrayOutputStream out, String s) {
+		out.writeBytes(s.getBytes(StandardCharsets.UTF_8));
+	}
 
-    static String decodeEntities(String s) {
-        return s.replace("&amp;", "&")
-                .replace("&lt;",  "<")
-                .replace("&gt;",  ">")
-                .replace("&quot;","\"")
-                .replace("&apos;","'")
-                .replace("&nbsp;"," ");
-    }
+	static byte[] trimBytes(byte[] data) {
+		int s = 0;
+		while (s < data.length && (data[s] == ' ' || data[s] == '\n' || data[s] == '\r')) {
+			s++;
+		}
+		int e = data.length - 1;
+		while (e > s && (data[e] == ' ' || data[e] == '\n' || data[e] == '\r')) {
+			e--;
+		}
+		return (s == 0 && e == data.length - 1) ? data : Arrays.copyOfRange(data, s, e + 1);
+	}
 
-    static byte[] trimBytes(byte[] data) {
-        int s = 0; while (s < data.length && (data[s]==' '||data[s]=='\n'||data[s]=='\r')) s++;
-        int e = data.length-1; while (e > s && (data[e]==' '||data[e]=='\n'||data[e]=='\r')) e--;
-        return (s==0 && e==data.length-1) ? data : Arrays.copyOfRange(data, s, e+1);
-    }
+	// ── 4. Block packer ───────────────────────────────────────────────────────
 
-    // ── 4. Block packer ───────────────────────────────────────────────────────
+	record Block(byte[] firstWordUtf8, byte[] container) {
+	}
 
-    record Block(byte[] firstWordUtf8, byte[] container) {}
+	static List<Block> packBlocks(List<ParsedEntry> entries) throws IOException {
+		var blocks = new ArrayList<Block>();
+		var current = new ArrayList<ParsedEntry>();
+		int currentDsz = 0;
 
-    static List<Block> packBlocks(List<Entry> entries) throws IOException {
-        var blocks  = new ArrayList<Block>();
-        var current = new ArrayList<Entry>();
-        int currentDsz = 0;
+		for (ParsedEntry e : entries) {
+			int entrySize = e.serialisedLength();
+			current.add(e);
+			currentDsz += entrySize;
+			boolean flush = current.size() > TARGET_BLOCK_ENTRIES || // entry count hard cap
+					currentDsz + 2 > TARGET_BLOCK_DECOMPRESSED || // decompressed size hard cap
+					(currentDsz > 3_000 && compressBlock(current).container().length > TARGET_BLOCK_COMPRESSED); // compressed
+																													// cap
+			if (flush && current.size() > 1) {
+				current.remove(current.size() - 1);
+				currentDsz -= entrySize;
+				blocks.add(compressBlock(current));
+				current.clear();
+				current.add(e);
+				currentDsz = entrySize;
+			}
+		}
+		if (!current.isEmpty())
+			blocks.add(compressBlock(current));
+		return blocks;
+	}
 
-        for (Entry e : entries) {
-            int entrySize = e.serialisedLength();
-            current.add(e);
-            currentDsz += entrySize;
-            boolean flush =
-                current.size() > TARGET_BLOCK_ENTRIES ||                    // entry count hard cap
-                currentDsz + 2 > TARGET_BLOCK_DECOMPRESSED ||               // decompressed size hard cap
-                (currentDsz > 3_000 && compressBlock(current).container().length > TARGET_BLOCK_COMPRESSED); // compressed cap
-            if (flush && current.size() > 1) {
-                current.remove(current.size() - 1);
-                currentDsz -= entrySize;
-                blocks.add(compressBlock(current));
-                current.clear();
-                current.add(e);
-                currentDsz = entrySize;
-            }
-        }
-        if (!current.isEmpty()) blocks.add(compressBlock(current));
-        return blocks;
-    }
+	/** Join two definition byte arrays with a newline separator. */
+	static byte[] joinDefs(byte[] a, byte[] b) {
+		return joinDefsBlankLine(a, b);
+	}
 
-    /** Join two definition byte arrays with a newline separator. */
-    static byte[] joinDefs(byte[] a, byte[] b) {
-        return joinDefsBlankLine(a, b);
-    }
+	// Join two definitions with a blank line: 0x0a 0x20 0x0a (satisfies all spacing
+	// rules)
+	static byte[] joinDefsBlankLine(byte[] a, byte[] b) {
+		byte[] sep = new byte[] { FMT_NEWLINE, 0x20, FMT_NEWLINE };
+		byte[] out = new byte[a.length + sep.length + b.length];
+		System.arraycopy(a, 0, out, 0, a.length);
+		System.arraycopy(sep, 0, out, a.length, sep.length);
+		System.arraycopy(b, 0, out, a.length + sep.length, b.length);
+		return out;
+	}
 
-    // Join two definitions with a blank line: 0x0a 0x20 0x0a (satisfies all spacing rules)
-    static byte[] joinDefsBlankLine(byte[] a, byte[] b) {
-        byte[] sep = new byte[]{ FMT_NEWLINE, 0x20, FMT_NEWLINE };
-        byte[] out = new byte[a.length + sep.length + b.length];
-        System.arraycopy(a,   0, out, 0,                   a.length);
-        System.arraycopy(sep, 0, out, a.length,             sep.length);
-        System.arraycopy(b,   0, out, a.length + sep.length, b.length);
-        return out;
-    }
+	static Block compressBlock(List<ParsedEntry> entries) throws IOException {
+		var raw = new ByteArrayOutputStream();
+		for (ParsedEntry e : entries) {
+			byte[] wBytes = e.word().getBytes(StandardCharsets.UTF_8);
+			int len = 2 + wBytes.length + 1 + e.definition().length + 1;
+			if (len > 0xFFFF)
+				len = 0xFFFF;
+			writeU16(raw, len);
+			raw.write(wBytes);
+			raw.write(0);
+			raw.write(e.definition());
+			raw.write(0);
+		}
+		// Terminator: elen=0x0000 signals end of block to firmware
+		raw.write(0);
+		raw.write(0);
+		byte[] rawBytes = raw.toByteArray();
+		byte[] compressed = deflate(rawBytes);
+		return new Block(entries.get(0).word().getBytes(StandardCharsets.UTF_8), compressed);
+	}
 
-    static Block compressBlock(List<Entry> entries) throws IOException {
-        var raw = new ByteArrayOutputStream();
-        for (Entry e : entries) {
-            byte[] wBytes = e.word().getBytes(StandardCharsets.UTF_8);
-            int len = 2 + wBytes.length + 1 + e.definition().length + 1;
-            if (len > 0xFFFF) len = 0xFFFF;
-            writeU16(raw, len);
-            raw.write(wBytes); raw.write(0);
-            raw.write(e.definition()); raw.write(0);
-        }
-        // Terminator: elen=0x0000 signals end of block to firmware
-        raw.write(0); raw.write(0);
-        byte[] rawBytes = raw.toByteArray();
-        byte[] compressed = deflate(rawBytes);
-        return new Block(
-            entries.get(0).word().getBytes(StandardCharsets.UTF_8),
-            compressed
-        );
-    }
+	// ── 5. Word index ─────────────────────────────────────────────────────────
 
-    // ── 5. Word index ─────────────────────────────────────────────────────────
+	static byte[] buildIndex(List<Block> blocks) throws IOException {
+		var out = new ByteArrayOutputStream();
+		for (Block b : blocks) {
+			int csz = b.container().length;
+			writeU16(out, csz);
+			out.write(b.firstWordUtf8());
+			out.write(0);
+		}
+		out.write(0);
+		out.write(0); // terminator — matches converter.exe
+		return out.toByteArray();
+	}
 
-    static byte[] buildIndex(List<Block> blocks) throws IOException {
-        var out = new ByteArrayOutputStream();
-        for (Block b : blocks) {
-            int csz = b.container().length;
-            writeU16(out, csz);
-            out.write(b.firstWordUtf8()); out.write(0);
-        }
-        out.write(0); out.write(0); // terminator — matches converter.exe
-        return out.toByteArray();
-    }
+	// ── 6. .dic writer ────────────────────────────────────────────────────────
 
-    // ── 6. .dic writer ────────────────────────────────────────────────────────
+	static void writeDic(Path out, String name, int entryCount, TreeMap<Integer, Integer> collation, byte[] morphem,
+			byte[] keyboard, List<Block> blocks) throws IOException {
 
-    static void writeDic(Path out, String name, int entryCount,
-                         TreeMap<Integer,Integer> collation,
-                         byte[] morphem, byte[] keyboard,
-                         List<Block> blocks) throws IOException {
+		byte[] collBytes = collationToBytes(collation);
+		byte[] morphBlock = wrapBlock(morphem);
+		byte[] keyboardBlock = wrapBlock(keyboard);
+		byte[] indexBlock = wrapBlock(buildIndex(blocks));
 
-        byte[] collBytes     = collationToBytes(collation);
-        byte[] morphBlock    = wrapBlock(morphem);
-        byte[] keyboardBlock = wrapBlock(keyboard);
-        byte[] indexBlock    = wrapBlock(buildIndex(blocks));
+		int collationOffset = HEADER_SIZE;
+		int morphemOffset = collationOffset + collBytes.length;
+		int keyboardOffset = morphemOffset + morphBlock.length;
+		int indexOffset = keyboardOffset + keyboardBlock.length;
+		int defblocksOffset = indexOffset + indexBlock.length;
 
-        int collationOffset  = HEADER_SIZE;
-        int morphemOffset    = collationOffset  + collBytes.length;
-        int keyboardOffset   = morphemOffset    + morphBlock.length;
-        int indexOffset      = keyboardOffset   + keyboardBlock.length;
-        int defblocksOffset  = indexOffset      + indexBlock.length;
+		byte[] header = buildHeader(entryCount, collationOffset, morphemOffset, keyboardOffset, indexOffset,
+				defblocksOffset, name);
 
-        byte[] header = buildHeader(entryCount, collationOffset, morphemOffset,
-                                    keyboardOffset, indexOffset, defblocksOffset, name);
+		try (var os = new BufferedOutputStream(new FileOutputStream(out.toFile()))) {
+			os.write(header);
+			os.write(collBytes);
+			os.write(morphBlock);
+			os.write(keyboardBlock);
+			os.write(indexBlock);
+			int n = 0;
+			for (Block b : blocks) {
+				os.write(b.container());
+				if (++n % 200 == 0)
+					err(String.format("  %d / %d blocks written", n, blocks.size()));
+			}
+		}
+	}
 
-        try (var os = new BufferedOutputStream(new FileOutputStream(out.toFile()))) {
-            os.write(header);
-            os.write(collBytes);
-            os.write(morphBlock);
-            os.write(keyboardBlock);
-            os.write(indexBlock);
-            int n = 0;
-            for (Block b : blocks) {
-                os.write(b.container());
-                if (++n % 200 == 0) err(String.format("  %d / %d blocks written", n, blocks.size()));
-            }
-        }
-    }
+	static byte[] buildHeader(int entryCount, int collOff, int morphOff, int kbOff, int idxOff, int defOff,
+			String name) {
+		byte[] h = new byte[HEADER_SIZE];
+		System.arraycopy(MAGIC, 0, h, 0x00, 4);
+		putU32(h, 0x04, VERSION);
+		putU32(h, 0x08, entryCount);
+		putU32(h, 0x0c, UNKNOWN_0C);
+		putU32(h, 0x24, collOff);
+		putU32(h, 0x28, morphOff);
+		putU32(h, 0x2c, kbOff);
+		putU32(h, 0x38, idxOff);
+		putU32(h, 0x3c, defOff);
+		byte[] nb = name.getBytes(StandardCharsets.UTF_8);
+		int nl = Math.min(nb.length, 63);
+		System.arraycopy(nb, 0, h, 0x40, nl);
+		return h;
+	}
 
-    static byte[] buildHeader(int entryCount, int collOff, int morphOff,
-                               int kbOff, int idxOff, int defOff, String name) {
-        byte[] h = new byte[HEADER_SIZE];
-        System.arraycopy(MAGIC, 0, h, 0x00, 4);
-        putU32(h, 0x04, VERSION);
-        putU32(h, 0x08, entryCount);
-        putU32(h, 0x0c, UNKNOWN_0C);
-        putU32(h, 0x24, collOff);
-        putU32(h, 0x28, morphOff);
-        putU32(h, 0x2c, kbOff);
-        putU32(h, 0x38, idxOff);
-        putU32(h, 0x3c, defOff);
-        byte[] nb = name.getBytes(StandardCharsets.UTF_8);
-        int nl = Math.min(nb.length, 63);
-        System.arraycopy(nb, 0, h, 0x40, nl);
-        return h;
-    }
+	// ── Compression helpers ───────────────────────────────────────────────────
 
-    // ── Compression helpers ───────────────────────────────────────────────────
+	/** Compress raw bytes and prepend uint32_le decompressed size. */
+	static byte[] wrapBlock(byte[] raw) throws IOException {
+		byte[] comp = deflate(raw);
+		var out = new ByteArrayOutputStream(4 + comp.length);
+		writeU32(out, raw.length);
+		out.write(comp);
+		return out.toByteArray();
+	}
 
-    /** Compress raw bytes and prepend uint32_le decompressed size. */
-    static byte[] wrapBlock(byte[] raw) throws IOException {
-        byte[] comp = deflate(raw);
-        var out = new ByteArrayOutputStream(4 + comp.length);
-        writeU32(out, raw.length);
-        out.write(comp);
-        return out.toByteArray();
-    }
+	static byte[] deflate(byte[] data) throws IOException {
+		var d = new Deflater(Deflater.DEFAULT_COMPRESSION, false);
+		d.setInput(data);
+		d.finish();
+		var out = new ByteArrayOutputStream(data.length / 2 + 64);
+		var buf = new byte[8192];
+		while (!d.finished()) {
+			int n = d.deflate(buf);
+			out.write(buf, 0, n);
+		}
+		d.end();
+		return out.toByteArray();
+	}
 
-    static byte[] deflate(byte[] data) throws IOException {
-        var d = new Deflater(Deflater.DEFAULT_COMPRESSION, false);
-        d.setInput(data); d.finish();
-        var out = new ByteArrayOutputStream(data.length / 2 + 64);
-        var buf = new byte[8192];
-        while (!d.finished()) { int n = d.deflate(buf); out.write(buf, 0, n); }
-        d.end();
-        return out.toByteArray();
-    }
+	// ── Integer write helpers ─────────────────────────────────────────────────
 
-    // ── Integer write helpers ─────────────────────────────────────────────────
+	static void writeU16(OutputStream out, int v) throws IOException {
+		out.write(v & 0xFF);
+		out.write((v >> 8) & 0xFF);
+	}
 
-    static void writeU16(OutputStream out, int v) throws IOException {
-        out.write(v & 0xFF); out.write((v >> 8) & 0xFF);
-    }
-    static void writeU32(OutputStream out, int v) throws IOException {
-        out.write(v & 0xFF); out.write((v >> 8) & 0xFF);
-        out.write((v >> 16) & 0xFF); out.write((v >> 24) & 0xFF);
-    }
-    static void putU32(byte[] b, int off, int v) {
-        b[off]=  (byte)(v & 0xFF); b[off+1]=(byte)((v>>8)  & 0xFF);
-        b[off+2]=(byte)((v>>16)&0xFF); b[off+3]=(byte)((v>>24)&0xFF);
-    }
+	static void writeU32(OutputStream out, int v) throws IOException {
+		out.write(v & 0xFF);
+		out.write((v >> 8) & 0xFF);
+		out.write((v >> 16) & 0xFF);
+		out.write((v >> 24) & 0xFF);
+	}
 
-    // ── Morphem encoding ──────────────────────────────────────────────────────
+	static void putU32(byte[] b, int off, int v) {
+		b[off] = (byte) (v & 0xFF);
+		b[off + 1] = (byte) ((v >> 8) & 0xFF);
+		b[off + 2] = (byte) ((v >> 16) & 0xFF);
+		b[off + 3] = (byte) ((v >> 24) & 0xFF);
+	}
 
-    /** Read a text file (UTF-8, strip BOM) and re-encode as UTF-16 LE. */
-    static byte[] readAsUtf16Le(Path file) throws IOException {
-        // Morphem format: uppercase chars, lines separated by NUL (uint16 0x0000),
-        // no trailing newline bytes — matches reference firmware expectation.
-        String raw = Files.readString(file, StandardCharsets.UTF_8)
-                          .replace("\uFEFF", "")
-                          .toUpperCase(java.util.Locale.ROOT);
-        var out = new ByteArrayOutputStream();
-        for (String line : raw.split("\\r?\\n")) {
-            if (line.isEmpty()) continue;
-            out.write(line.getBytes(StandardCharsets.UTF_16LE));
-            out.write(0); out.write(0); // NUL separator (uint16 LE)
-        }
-        out.write(0); out.write(0); // extra NUL — double-NUL terminator required by firmware
-        return out.toByteArray();
-    }
+	// ── Morphem encoding ──────────────────────────────────────────────────────
 
-    // ── Config / CLI helpers ──────────────────────────────────────────────────
+	/** Read a text file (UTF-8, strip BOM) and re-encode as UTF-16 LE. */
+	static byte[] readAsUtf16Le(Path file) throws IOException {
+		// Morphem format: uppercase chars, lines separated by NUL (uint16 0x0000),
+		// no trailing newline bytes — matches reference firmware expectation.
+		String raw = Files.readString(file, StandardCharsets.UTF_8).replace("\uFEFF", "")
+				.toUpperCase(java.util.Locale.ROOT);
+		var out = new ByteArrayOutputStream();
+		for (String line : raw.split("\\r?\\n")) {
+			if (line.isEmpty())
+				continue;
+			out.write(line.getBytes(StandardCharsets.UTF_16LE));
+			out.write(0);
+			out.write(0); // NUL separator (uint16 LE)
+		}
+		out.write(0);
+		out.write(0); // extra NUL — double-NUL terminator required by firmware
+		return out.toByteArray();
+	}
 
-    static Map<String,String> parseArgs(String[] args) throws IOException {
-        var cli = new LinkedHashMap<String,String>();
-        for (int i = 0; i < args.length; i++) {
-            switch (args[i]) {
-                case "--config",  "-c" -> cli.put("config",  args[++i]);
-                case "--in",      "-i" -> cli.put("in",      args[++i]);
-                case "--out",     "-o" -> cli.put("out",     args[++i]);
-                case "--lang",    "-l" -> cli.put("lang",    args[++i]);
-                case "--langdir", "-d" -> cli.put("langdir", args[++i]);
-                case "--name",    "-n" -> cli.put("name",    args[++i]);
-                case "--merge-defs", "-m" -> cli.put("merge-defs", args[++i]);
-                default -> err(String.format("Warning: unknown argument '%s', ignoring.", args[i]));
-            }
-        }
-        var props = new Properties();
-        String cp = cli.get("config");
-        if (cp != null) {
-            Path p = Path.of(cp);
-            if (!Files.exists(p)) { err(String.format("Error: config not found: %s", p)); System.exit(1); }
-            try (var r = new java.io.InputStreamReader(new FileInputStream(p.toFile()), StandardCharsets.UTF_8)) { props.load(r); }
-        }
-        // Merge props into cli (cli wins)
-        String NS = "xdxf2pcdic.";
-        for (String key : List.of("in","out","lang","langdir","name","merge-defs")) {
-            if (!cli.containsKey(key)) {
-                String v = props.getProperty(NS + key);
-                if (v == null) v = props.getProperty(key);
-                if (v != null) cli.put(key, v);
-            }
-        }
-        return cli;
-    }
+	// ── Config / CLI helpers ──────────────────────────────────────────────────
 
-    static String resolve(Map<String,String> config, String key, String def) {
-        return config.getOrDefault(key, def);
-    }
+	/**
+	 * Maps a command line word to its option key, or {@code null} when it is not
+	 * an option of this tool. Used by {@link ArgsHelper#parse} both to read options
+	 * and to detect an option given where a value was expected.
+	 */
+	static String optionKey(String arg) {
+		return switch (arg) {
+		case "--config", "-c"     -> "config";
+		case "--in", "-i"         -> "in";
+		case "--out", "-o"        -> "out";
+		case "--lang", "-l"       -> "lang";
+		case "--langdir", "-D"    -> "langdir";
+		case "--name", "-n"       -> "name";
+		case "--merge-defs", "-m" -> "merge-defs";
+		default -> null;
+		};
+	}
 
-    static String require(Map<String,String> config, String key, String desc) {
-        String v = config.get(key);
-        if (v == null) { err(String.format("Error: missing required argument %s", desc)); System.exit(1); }
-        return v;
-    }
+	static Map<String, String> parseArgs(String[] args) throws IOException {
+		return ArgsHelper.parse(args, ConvXdxf2Pbdic::optionKey, er -> err(er), () -> usage());
+	}
 
-    static final String TOOL = "xdxf-2-pbdic";
+	static final String TOOL = "xdxf-2-pbdic";
 
-    static void err(String msg) { System.err.println((msg!=null && !msg.isBlank()? TOOL + ": ":"") + msg); }
-    static void errRaw(String msg) { System.err.println(msg); }
+	static void err(String msg, Object... args) {
+		if (msg.isBlank() || msg.startsWith(TOOL)) {
+			errRaw(msg, args);
+		} else {
+			errRaw(TOOL + ": " + msg, args);
+		}
+	}
 
-    static void printUsage() {
-        errRaw("xdxf-2-pbdic — convert XDXF to PocketBook .dic\n");
-        errRaw("Usage:");
-        errRaw("  linux/xdxf-2-pbdic -i <xdxf> -o <dic> -l <lang> [options]\n");
-        errRaw("Required:");
-        errRaw("  -i / --in       Input XDXF file, or - to read from stdin");
-        errRaw("  -o / --out      Output .dic file");
-        errRaw("  -l / --lang     Language code (e.g. pt, en, fr)");
-        errRaw("  -m / --merge-defs  ALWAYS — headword match is case-insensitive; merge different defs, drop identical");
-        errRaw("                     EXACT  — headword match is case-sensitive;   merge different defs, drop identical");
-        errRaw("                     NEVER  — never merge; only drop byte-identical duplicates\n");
-        errRaw("Optional:");
-        errRaw("  -d / --langdir  Language files dir (default: lang/<lang>/)");
-        errRaw("  -n / --name     Dictionary title");
-        errRaw("  -c / --config   .properties config file (namespace: xdxf2dic.*)\n");
-        errRaw("Example:");
-        errRaw("  linux/xdxf-2-pbdic -i data/out/kaikki-pt.xdxf -o data/out/kaikki-pt.dic -l pt -n \"Dicionário PT\"");
-        errRaw("  linux/kaikki-2-tab -c dict.properties | linux/xdxf-2-pbdic -i - -o data/out/kaikki-pt.dic -l pt");
-    }
+	static void abort(String msg, Object... args) {
+		err(msg, args);
+		System.exit(1);
+	}
+
+	static void errRaw(String msg, Object... args) {
+		// only format when arguments are given: pre-built messages may contain a literal '%'
+		System.err.println(args.length == 0 ? msg : String.format(msg, args));
+	}
+
+	static String usage() {
+		return TOOL + ": " + """
+				Convert an XDXF dictionary to PocketBook .dic (SDIC) format.
+
+				Usage:
+				  linux/xdxf-2-pbdic -i <xdxf> -o <dic> -l <lang> -m ALWAYS|EXACT|NEVER [options]
+
+				Required:
+				  -i / --in          Input XDXF file, or - for stdin
+				  -o / --out         Output .dic file
+				  -l / --lang        Language code (e.g. pt, en); selects the language files
+				  -m / --merge-defs  Duplicate headword handling:
+				                       ALWAYS — case-insensitive match; merge different defs, drop identical
+				                       EXACT  — case-sensitive match;   merge different defs, drop identical
+				                       NEVER  — never merge; only drop byte-identical duplicates
+
+				Optional:
+				  -D / --langdir     Language files dir with collates.txt, morphems.txt, keyboard.txt
+				                     (default: lang/<lang>)
+				  -n / --name        Dictionary title (default: name in the XDXF header,
+				                     else the output path without extension)
+				  -c / --config      .properties config file (namespace: xdxf2pcdic.*);
+				                     command-line options override it
+				  -h / --help        Show this help
+
+				Examples:
+				  linux/xdxf-2-pbdic -i data/out/kaikki-pt.xdxf -o data/out/kaikki-pt.dic -l pt -m ALWAYS
+				  linux/tab-2-xdxf -i data/out/kaikki-pt.tsv -o - -l pt -n "Dicionário PT" | linux/xdxf-2-pbdic -i - -o data/out/kaikki-pt.dic -l pt -m ALWAYS
+				  """;
+	}
 }
