@@ -95,8 +95,7 @@ public class CheckPbdic {
 		var argsHlp = new ArgsHelper(TOOL, "checkpbdic", er -> err(er), () -> usage());
 		// Load config file if specified
 		Map<String, String> cli = parseArgs(args);
-		String configPath = cli.get("config");
-		Properties config = argsHlp.loadProperties(configPath, true);
+		Properties config = argsHlp.loadConfig(cli);
 		argsHlp.mergeConfig2Cli(List.of("xdxf", "dic", "lang", "langdir", "sample"), cli, config);
 
 		String xdxfPath = argsHlp.require(cli, "xdxf", "--xdxf/-x");
@@ -649,6 +648,7 @@ public class CheckPbdic {
 	static String optionKey(String arg) {
 		return switch (arg) {
 		case "--config", "-c"  -> "config";
+		case "--def"           -> ArgsHelper.DEF_OPTION;
 		case "--xdxf", "-x"    -> "xdxf";
 		case "--dic", "-d"     -> "dic";
 		case "--lang", "-l"    -> "lang";
@@ -679,6 +679,8 @@ public class CheckPbdic {
 				  -D / --langdir   Language files dir with collates.txt (default: lang/<lang>)
 				  -c / --config    .properties config file (namespace: checkpbdic.*);
 				                   command-line options override it
+				  --def <name>=<value>
+				                   Set or override a config variable (def); repeatable
 				  -h / --help      Show this help
 
 				Exit code: 0 = all checks passed; 1 = a check failed, or invalid arguments/files.

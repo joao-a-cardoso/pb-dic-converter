@@ -46,14 +46,31 @@ linux/check-pbdic -x data/out/kaikki-pt.xdxf -d data/out/kaikki-pt.dic -l pt
 # XDXF → StarDict (writes data/out/kaikki-pt.d/stardict.{ifo,idx,dict.dz})
 linux/xdxf-2-stardict -i data/out/kaikki-pt.xdxf -o data/out/kaikki-pt.d -m ALWAYS -z true
 
-# Source → .xdxf piped in one step (no intermediate .tsv), driven by a config file
+# Source → .xdxf in one step, driven by a config file
 linux/chain-kaikki-2-xdxf   confs/kaikki2xdxf-pt-pt.config
 linux/chain-stardict-2-xdxf confs/stardict2xdxf-pt-pt.config
+
+# Kaikki → StarDict, the whole pipeline in one step
+linux/chain-kaikki-2-stardict confs/kaikki2stardict-pt-pt.config
+
+# … for another Kaikki version, without editing the config
+linux/chain-kaikki-2-stardict confs/kaikki2stardict-pt-pt.config --def version=2026-12
 ```
 
 The Kaikki source data is not in the repository; see `data/kaikki/Download-Portuguese.html` for where to download it.
 
-The `chain-*` scripts must be run from the project root (they call `linux/...` with relative paths). They stop at `.xdxf`; run `xdxf-2-pbdic` or `xdxf-2-stardict` afterwards.
+Chain scripts — each runs several tools from **one** config file:
+
+| Script | Steps | Config |
+|---|---|---|
+| `chain-kaikki-2-xdxf`     | Kaikki → TSV → XDXF | `confs/kaikki2xdxf-*.config` |
+| `chain-stardict-2-xdxf`   | StarDict → TSV → XDXF | `confs/stardict2xdxf-*.config` |
+| `chain-kaikki-2-stardict` | Kaikki → TSV → XDXF → StarDict | `confs/kaikki2stardict-*.config` (needs the `xdxf2stardict.*` keys) |
+
+- They can be run from any folder; the config's relative paths are taken from the project root.
+- They stop at the first failing step. The TSV goes to a temporary file, so if the first step fails, an existing `.xdxf` is not overwritten with an empty dictionary.
+- `--def <name>=<value>` (repeatable) after the config is passed to every step — see *Variables and comments* below.
+- `-h` shows the usage. To build a `.dic`, run `xdxf-2-pbdic` on the chain's `.xdxf`.
 
 ## Config Files
 
@@ -62,7 +79,7 @@ Each conversion has its own config file in `confs/`. All tools read it via `-c` 
 | Tool | Namespace | Keys |
 |------|-----------|------|
 | `stardict-2-tab`  | `stardict2tab.*`  | `in`, `out` |
-| `kaikki-2-tab`    | `kaikki2tab.*`    | `in`, `out`, `lang`, `embedded-defs` |
+| `kaikki-2-tab`    | `kaikki2tab.*`    | `in`, `out`, `lang`, `embedded-defs`, `terms-file` |
 | `tab-2-xdxf`      | `tab2xdxf.*`      | `in`, `out`, `lang`, `lang-to`, `name`, `desc`, `validate` |
 | `xdxf-2-pbdic`    | `xdxf2pcdic.*`    | `in`, `out`, `lang`, `langdir`, `name`, `merge-defs` |
 | `xdxf-2-stardict` | `xdxf2stardict.*` | `in`, `out`, `name`, `merge-defs`, `compress` |
@@ -94,43 +111,53 @@ tab2xdxf.name=$title (Kaikki)                # → Wiktionary.org pt-pt (Kaikki)
 - Variables are substituted in config values only — not in keys or command-line arguments. `def` lines are not keys, so they don't count for the prefixed/bare rule.
 - A `#` preceded by a space or tab starts a comment, up to the end of the line. A `#` without whitespace before it is kept (`C#`); write `\#` for a literal `#` after a space.
 - Errors (exit code 1): an undefined variable (`undefined variable '$lnag' in 'tab2xdxf.lang'`), a variable defined twice, a definition loop (`variable loop: a -> b -> a`) or a malformed `def` line.
+- `--def <name>=<value>` on the command line (repeatable, every tool and chain script) replaces the config's `def` of the same name, or adds a new variable: `--def version=2026-12 --def lang=en`. It is listed as `def version : 2026-12 (command line)`. A malformed `--def` or the same name twice is an error; without `-c` it has no effect (warning).
 
 Example config (`confs/kaikki2xdxf-pt-pt.config`):
 
 ```properties
+def version=2026-11                          # Kaikki data version (output file and dictionary name)
+def lang=pt                                  # headword language
+def lang_to=pt                               # definition language
+def title=Wiktionary.org ${lang}-${lang_to}  # start of the dictionary name and description
+
 kaikki2tab.in=data/kaikki/kaikki.org-all-to-Portuguese.jsonl.gz
 kaikki2tab.out=-
-kaikki2tab.lang=pt
+kaikki2tab.lang=$lang
 kaikki2tab.embedded-defs=BOTH
 
 tab2xdxf.in=-
-tab2xdxf.out=data/out/kaikki-pt-pt13.xdxf
-tab2xdxf.lang=pt
-tab2xdxf.lang-to=pt
-tab2xdxf.name=Wiktionary.org pt-pt (Kaikki/13)
-tab2xdxf.desc=Wiktionary.org pt-pt (built from Kaikki's source data)
+tab2xdxf.out=data/out/kaikki-pt-pt-${version}.xdxf
+tab2xdxf.lang=$lang
+tab2xdxf.lang-to=$lang_to
+tab2xdxf.name=$title (Kaikki $version)
+tab2xdxf.desc=$title (built from Kaikki's source data)
 ```
 
 Available configs:
 
 | Config | Source | Output |
 |--------|--------|--------|
-| `confs/kaikki2xdxf-pt-pt.config`  | Kaikki, Portuguese words → Portuguese definitions | `data/out/kaikki-pt-pt13.xdxf` |
-| `confs/kaikki2xdxf-en-pt.config`  | Kaikki, English words → Portuguese definitions    | `data/out/kaikki-en-pt.xdxf` |
+| `confs/kaikki2xdxf-pt-pt.config`  | Kaikki, Portuguese words → Portuguese definitions | `data/out/kaikki-pt-pt-<version>.xdxf` |
+| `confs/kaikki2xdxf-en-pt.config`  | Kaikki, English words → Portuguese definitions    | `data/out/kaikki-en-pt-<version>.xdxf` |
 | `confs/stardict2xdxf-pt-pt.config` | StarDict `data/stardict/dict-pt-pt` (reader-dict) | `data/out/readerdict-pt-pt.xdxf` |
+| `confs/kaikki2stardict-pt-pt.config` | as `kaikki2xdxf-pt-pt`, plus StarDict | `…-<version>.xdxf` and `data/out/kaikki-pt-pt-<version>.d/` |
+| `confs/kaikki2stardict-en-pt.config` | as `kaikki2xdxf-en-pt`, plus StarDict | `…-<version>.xdxf` and `data/out/kaikki-en-pt-<version>.d/` |
 
 ## Tools
 
 | Tool | Input | Output | Main options |
 |------|-------|--------|--------------|
 | `stardict-2-tab`  | StarDict `.ifo` (`.idx`/`.dict.dz` found alongside) | TSV | `-i`, `-o` |
-| `kaikki-2-tab`    | Kaikki `.jsonl` / `.jsonl.gz` | TSV | `-i`, `-o`, `-l <iso2>`, `-e KEEP\|SEPARATE\|BOTH` (default `BOTH`) |
+| `kaikki-2-tab`    | Kaikki `.jsonl` / `.jsonl.gz` | TSV | `-i`, `-o`, `-l <iso2>`, `-e KEEP\|SEPARATE\|BOTH` (default `BOTH`), `--terms-file <file>` |
 | `tab-2-xdxf`      | TSV | XDXF (XML-validated) | `-i`, `-o`, `-l`, `-t <lang-to>` (default `-l`), `-n <name>`, `--desc <desc>` (default name), `-v true\|false` (default `true`) |
 | `xdxf-2-pbdic`    | XDXF + language files | `.dic` | `-i`, `-o`, `-l`, `-m ALWAYS\|EXACT\|NEVER`, `-D <langdir>` (default `lang/<lang>`), `-n <name>` |
 | `xdxf-2-stardict` | XDXF | StarDict directory (`stardict.ifo/.idx/.dict[.dz]`) | `-i`, `-o <dir>`, `-m ALWAYS\|EXACT\|NEVER`, `-z true\|false` (compress), `-n <name>` |
 | `check-pbdic`     | `.dic` + `.xdxf` | Validation report (exit 1 on failure) | `-x`, `-d`, `-l`, `-D <langdir>` (default `lang/<lang>`), `-s <samples>` (default 20) |
 
-Every tool accepts `-c <config>` and `-h` / `--help`. Language codes (`-l`, `-t`) are two-letter ISO 639-1 codes, in any case (`pt`, `PT`). Progress messages go to stderr, so stdout is safe for piping.
+Every tool accepts `-c <config>`, `--def <name>=<value>` and `-h` / `--help`. Language codes (`-l`, `-t`) are two-letter ISO 639-1 codes, in any case (`pt`, `PT`). Progress messages go to stderr, so stdout is safe for piping.
+
+`kaikki-2-tab` label translations: labels such as *Etymology*, *feminine* or the English domain topics (*Botany*, *Medicine*) are translated with a `.properties` file (`english-term=translation`, case-insensitive). By default it is `java/term-translations_<lang>.properties`, from `-l`; `--terms-file <file>` (config: `kaikki2tab.terms-file`) uses another one. The file used is logged; a missing default file only means the labels stay in English. Dictionaries whose definitions are in another language than the headwords (EN → PT) should point to the definitions' language — `confs/kaikki2xdxf-en-pt.config` uses `java/term-translations_${lang_to}.properties`.
 
 `--merge-defs` (duplicate headwords):
 
@@ -138,18 +165,26 @@ Every tool accepts `-c <config>` and `-h` / `--help`. Language codes (`-l`, `-t`
 - `EXACT` — case-sensitive headword match; merge different definitions, drop identical ones
 - `NEVER` — never merge; only drop byte-identical duplicates
 
+PocketBook `.dic` size limit (`xdxf-2-pbdic` only — StarDict has no such limit): an entry must fit in one `.dic` block (27,000 bytes, the firmware's decompression buffer).
+- Merging stops when the next definition would not fit: it starts a new entry with the same headword, and the following definitions are merged into that one (`Note: '<word>' — merged definitions reached the block limit …`).
+- A single definition that is too large on its own is truncated at a line or word boundary and ends with `[...]` (`Warning: definition of '<word>' is … bytes … truncated`). In the Kaikki 2026-11 data this only affects *sistema*.
+
+`xdxf-2-stardict` writes `stardict.ifo`, `.idx` and `.dict.dz` (or `.dict`) into the `-o` folder; it replaces only these `stardict.*` files (and a stale `stardict.syn`) — other files in the folder are left alone.
+
 If `--name` is not given, `xdxf-2-pbdic` and `xdxf-2-stardict` take the name from the XDXF header, falling back to the output file name.
 
 ## Folder Structure
 
 ```
 linux/          stardict-2-tab  kaikki-2-tab  tab-2-xdxf  xdxf-2-pbdic  xdxf-2-stardict  check-pbdic
-                chain-kaikki-2-xdxf  chain-stardict-2-xdxf  runjava
+                chain-kaikki-2-xdxf  chain-stardict-2-xdxf  chain-kaikki-2-stardict  runjava
+                library.sh   (shared functions of the chain-* scripts; sourced, not run)
 java/           ConvStardict2Tab.java  ConvKaikki2Tab.java  ConvTab2Xdxf.java
                 ConvXdxf2Pbdic.java    ConvXdxf2Stardict.java  CheckPbdic.java
-                term-translations_pt.properties
+                term-translations_pt.properties   (kaikki-2-tab label translations)
   shared/       ArgsHelper  Constants  DictzipUtil  JsonParser  LangHelper  XdxfHelper  XmlHelper
 confs/          kaikki2xdxf-en-pt.config  kaikki2xdxf-pt-pt.config  stardict2xdxf-pt-pt.config
+                kaikki2stardict-en-pt.config  kaikki2stardict-pt-pt.config
 data/
   stardict/
     dict-pt-pt/ dict-data.ifo  .idx  .dict.dz  .syn
@@ -167,6 +202,8 @@ The tool logic lives in `java/` as standard `.java` source files (one class per 
 The `linux/` scripts are thin wrappers that delegate to `runjava`, which locates the
 `java/` directory relative to itself and invokes `java --source 25 <ClassName>.java`.
 No compilation step is needed.
+
+The `chain-*` scripts source `linux/library.sh`, which holds what they share: argument handling (`-h`, the config file, `--def`), running from the project root, the config section check, the temporary TSV and the `[n/N]` step messages. A chain script itself only sets its name and number of steps and lists its tool calls.
 
 ---
 

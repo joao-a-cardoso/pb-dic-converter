@@ -124,6 +124,26 @@ public class XmlHelper {
 				.replace("&nbsp;", " ");
 	}
 
+	/**
+	 * Makes an HTML definition safe for XDXF (well-formed XML):
+	 * <ul>
+	 * <li>common HTML entities ({@code &nbsp;}, {@code &mdash;}, …) become
+	 * characters;</li>
+	 * <li>tags in {@link #ALLOWED_TAGS} are kept without attributes; void tags are
+	 * self-closed ({@code <br/>});</li>
+	 * <li>other tags ({@code <html>}, {@code <svg>}, …) are dropped, their text is
+	 * kept;</li>
+	 * <li>tags are balanced: a closing tag without a matching opening tag is
+	 * dropped, tags left open are closed;</li>
+	 * <li>{@code &} is kept only for XML entities ({@code &amp; &lt; &gt; &quot;
+	 * &apos;} and numeric ones), otherwise escaped; a {@code <} that does not start
+	 * a tag is escaped;</li>
+	 * <li>whitespace right after an opening tag or before a closing tag is
+	 * removed.</li>
+	 * </ul>
+	 * Well-formed input using only allowed tags without attributes is returned
+	 * unchanged (apart from the entity and whitespace rules).
+	 */
 	public static String cleanHtml(String html) {
 
 		html = html//
@@ -148,72 +168,79 @@ public class XmlHelper {
 				.replace("&acute;", "´")//
 				.replace("&cedil;", "¸");
 
-		html = html//
-				.replaceAll("(<[a-zA-Z]+>)[\\s]+", "$1") //
-				.replaceAll("[\\s]+(</[a-zA-Z]+>)", "$1");
-
-		return html;
-		/*-
 		var sb = new StringBuilder(html.length());
+		var open = new java.util.ArrayDeque<String>(); // open allowed tags, innermost first
 		int i = 0;
-		int pCount = 0;
 		while (i < html.length()) {
-			char c = html.charAt(i);
-			if (c == '<') {
-				int end = html.indexOf('>', i);
-				if (end == -1) {
-					sb.append("&lt;");
+			char ch = html.charAt(i);
+			if (ch == '<') {
+				var m = TAG.matcher(html).region(i, html.length());
+				if (!m.lookingAt()) {
+					sb.append("&lt;"); // not a tag: literal '<'
 					i++;
 					continue;
 				}
-		
-				String inner = html.substring(i + 1, end).trim();
-				boolean closing = inner.startsWith("/");
-				String tagName = (closing ? inner.substring(1) : inner).split("[\\s/]")[0].toLowerCase();
-		
-				if (ALLOWED_TAGS.contains(tagName)) {
-					if (VOID_TAGS.contains(tagName)) {
-						sb.append("<").append(tagName).append("/>");
-					} else if (closing) {
-						sb.append("</").append(tagName).append(">");
-					} else {
-						if (tagName.equals("p")) {
-							if (pCount > 0)
-								sb.append('\n');
-							pCount++;
-						}
-						sb.append("<").append(tagName).append(">");
-					}
+				i = m.end();
+				if (m.group(2) == null) {
+					continue; // comment, <!DOCTYPE>, <?…?>: dropped
 				}
-		
-				i = end + 1;
-			} else if (c == '&') {
-				int semi = html.indexOf(';', i);
-				int nextTag = html.indexOf('<', i);
-				if (semi != -1 && (nextTag == -1 || semi < nextTag) && semi - i < 12) {
-					String entity = html.substring(i, semi + 1);
-					if (entity.startsWith("&#") || entity.equals("&amp;") || entity.equals("&lt;")
-							|| entity.equals("&gt;") || entity.equals("&quot;") || entity.equals("&apos;")) {
-						sb.append(entity);
-					} else {
-						sb.append("&amp;").append(entity, 1, entity.length());
+				boolean closing = !m.group(1).isEmpty();
+				String tag = m.group(2).toLowerCase(java.util.Locale.ROOT);
+				if (!ALLOWED_TAGS.contains(tag)) {
+					continue; // unknown tag: dropped, its text is kept
+				}
+				if (VOID_TAGS.contains(tag)) {
+					if (!closing) {
+						sb.append('<').append(tag).append("/>");
 					}
-					i = semi + 1;
+				} else if (!closing) {
+					if (m.group(3).trim().endsWith("/")) {
+						sb.append('<').append(tag).append("/>"); // <p/>: empty element
+					} else {
+						sb.append('<').append(tag).append('>');
+						open.push(tag);
+					}
+				} else if (open.contains(tag)) {
+					// close the inner tags still open, then this one
+					String top;
+					do {
+						top = open.pop();
+						sb.append("</").append(top).append('>');
+					} while (!top.equals(tag));
+				}
+				// else: closing tag without opening tag: dropped
+			} else if (ch == '&') {
+				var m = XML_ENTITY.matcher(html).region(i, html.length());
+				if (m.lookingAt()) {
+					sb.append(m.group());
+					i = m.end();
 				} else {
 					sb.append("&amp;");
 					i++;
 				}
 			} else {
-				int next = i + 1;
-				while (next < html.length() && html.charAt(next) != '<' && html.charAt(next) != '&')
-					next++;
-				String text = html.substring(i, next).replace("\u00a0", " ").replace("\r", "");
-				sb.append(escapeXmlText(text, false));
-				i = next;
+				sb.append(ch);
+				i++;
 			}
 		}
-		return sb.toString();
-		*/
+		while (!open.isEmpty()) {
+			sb.append("</").append(open.pop()).append('>');
+		}
+
+		return sb.toString()//
+				.replaceAll("(<[a-zA-Z]+>)[\\s]+", "$1") //
+				.replaceAll("[\\s]+(</[a-zA-Z]+>)", "$1");
 	}
+
+	/**
+	 * A tag: group 1 = "/" for a closing tag, group 2 = name (null for a comment,
+	 * declaration or processing instruction), group 3 = the rest (attributes).
+	 */
+	private static final java.util.regex.Pattern TAG = java.util.regex.Pattern
+			.compile("<(?:!--.*?-->|[!?][^>]*>|(/?)([a-zA-Z][a-zA-Z0-9]*)([^<>]*)>)", java.util.regex.Pattern.DOTALL);
+
+	/** Entities valid in XML without a DTD. */
+	private static final java.util.regex.Pattern XML_ENTITY = java.util.regex.Pattern
+			.compile("&(?:amp|lt|gt|quot|apos|#[0-9]+|#[xX][0-9a-fA-F]+);");
 
 }

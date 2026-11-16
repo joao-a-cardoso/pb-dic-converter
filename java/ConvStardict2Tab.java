@@ -65,7 +65,7 @@ public class ConvStardict2Tab {
 		var cli = parseArgs(args);
 		var argsHlp = new ArgsHelper(TOOL, "stardict2tab", er -> err(er), () -> usage());
 		// Load config file if specified
-		Properties config = argsHlp.loadProperties(cli.get("config"), true);
+		Properties config = argsHlp.loadConfig(cli);
 		argsHlp.mergeConfig2Cli(List.of("in", "out"), cli, config);
 
 		String input = argsHlp.require(cli, "in", "--in/-i");
@@ -88,7 +88,7 @@ public class ConvStardict2Tab {
 				writer.write(e.word() + "\t" + e.definition().replace("\n", " ").replace("\t", " ") + "\n");
 		}
 
-		err("Done. " + entries.size() + " entries written to " + (toStdout ? "<stdout>" : output) + ".");
+		err("Done. " + entries.size() + " entries written to " + (toStdout ? "<stdout>" : ArgsHelper.displayPath(output)) + ".");
 	}
 
 	// --- StarDict reader ---
@@ -168,6 +168,7 @@ public class ConvStardict2Tab {
 	static String optionKey(String arg) {
 		return switch (arg) {
 		case "--config", "-c" -> "config";
+		case "--def"          -> ArgsHelper.DEF_OPTION;
 		case "--in", "-i"     -> "in";
 		case "--out", "-o"    -> "out";
 		default -> null;
@@ -193,6 +194,8 @@ public class ConvStardict2Tab {
 				Optional:
 				  -c / --config  .properties config file (namespace: stardict2tab.*);
 				                 command-line options override it
+				  --def <name>=<value>
+				                 Set or override a config variable (def); repeatable
 				  -h / --help    Show this help
 
 				Examples:

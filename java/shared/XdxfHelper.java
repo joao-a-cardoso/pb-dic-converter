@@ -84,7 +84,7 @@ public class XdxfHelper {
 	 */
 	public static void writeXdxf(XdxfHeader header, List<XdxfEntry> entries, Path outFile, Consumer<String> logger)
 			throws Exception {
-		logger.accept(String.format("%d entries written to %s.", entries.size(), outFile));
+		logger.accept(String.format("%d entries written to %s.", entries.size(), ArgsHelper.displayPath(outFile.toString())));
 	}
 
 	public static void writeXdxf(XdxfHeader header, List<XdxfEntry> entries, OutputStream stream,

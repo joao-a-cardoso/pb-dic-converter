@@ -1,0 +1,21 @@
+#!/usr/bin/bash
+# Full pipeline Kaikki -> StarDict, driven by one config file:
+#   kaikki-2-tab -> tab-2-xdxf  (kaikki2tab.*, tab2xdxf.*)   -> .xdxf
+#   xdxf-2-stardict             (xdxf2stardict.*)            -> StarDict dir
+# Can be run from any folder; the config's relative paths are taken from the
+# project root (the folder above linux/).
+# --def <name>=<value> (repeatable) sets or overrides a config variable; it is
+# passed to every step, e.g.  --def version=2026-12
+source "$(dirname "$(realpath "$0")")/library.sh"
+
+TOOL=chain-kaikki-2-stardict
+STEPS=3
+parse_chain_args "$@"
+goto_project_root
+require_section xdxf2stardict "in, out, merge-defs, compress"
+make_temp_tsv   # first step writes a temp TSV: a failure never overwrites the .xdxf
+
+step "Kaikki -> TSV";    linux/kaikki-2-tab    -c "$CONFIG" "${DEFS[@]}" -o "$TSV"
+step "TSV -> XDXF";      linux/tab-2-xdxf      -c "$CONFIG" "${DEFS[@]}" -i "$TSV"
+step "XDXF -> StarDict"; linux/xdxf-2-stardict -c "$CONFIG" "${DEFS[@]}"
+done_msg

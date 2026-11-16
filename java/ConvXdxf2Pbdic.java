@@ -68,8 +68,7 @@ public class ConvXdxf2Pbdic {
 
 		var cli = parseArgs(args);
 		var argsHlp = new ArgsHelper(TOOL, "xdxf2pcdic", er -> err(er), () -> usage());
-		String configPath = cli.get("config");
-		Properties config = argsHlp.loadProperties(configPath, true);
+		Properties config = argsHlp.loadConfig(cli);
 		argsHlp.mergeConfig2Cli(List.of("in", "out", "lang", "langdir", "name", "merge-defs"), cli, config);
 
 		String inPath = argsHlp.require(cli, "in", "--in/-i");
@@ -131,6 +130,9 @@ public class ConvXdxf2Pbdic {
 			name = ArgsHelper.baseName(outPath);
 		}
 
+		// 2b. A single definition too large for one block is truncated, ending with [...]
+		truncateOversized(entries);
+
 		// 3. Sort by collated headword
 		err("Sorting...");
 		entries.sort(Comparator.comparing(e -> collatedKey(e.word(), collation)));
@@ -152,13 +154,22 @@ public class ConvXdxf2Pbdic {
 				if (sameWord) {
 					boolean sameDef = Arrays.equals(prev.definition(), e.definition());
 					if (!sameDef && !mergeDefs.equals("NEVER")) {
-						merged.remove(merged.size() - 1);
 						// ALWAYS: keep lowercase headword; EXACT: keep first
 						String keepWord = mergeDefs.equals("ALWAYS")
 								? (prev.word().equals(prev.word().toLowerCase(java.util.Locale.ROOT)) ? prev.word()
 										: e.word())
 								: prev.word();
-						merged.add(new ParsedEntry(keepWord, joinDefsBlankLine(prev.definition(), e.definition())));
+						byte[] joined = joinDefsBlankLine(prev.definition(), e.definition());
+						if (joined.length > maxDefinitionBytes(keepWord)) {
+							// merged entry would not fit in a block: start a new entry for this word;
+							// the following definitions are merged into it
+							err(String.format("Note: '%s' — merged definitions reached the block limit (%,d bytes): new entry started",
+									e.word(), maxDefinitionBytes(keepWord)));
+							merged.add(e);
+							continue;
+						}
+						merged.remove(merged.size() - 1);
+						merged.add(new ParsedEntry(keepWord, joined));
 					} else if (sameDef) {
 						// byte-identical duplicate — discard silently
 					} else {
@@ -187,7 +198,7 @@ public class ConvXdxf2Pbdic {
 			Files.createDirectories(dicFile.getParent());
 		writeDic(dicFile, name, entries.size(), collation, morphem, keyboard, blocks);
 
-		err(String.format("%d entries written to %s.", entries.size(), dicFile));
+		err(String.format("%d entries written to %s.", entries.size(), ArgsHelper.displayPath(dicFile.toString())));
 	}
 
 	// ── 1. Collation table ────────────────────────────────────────────────────
@@ -389,6 +400,87 @@ public class ConvXdxf2Pbdic {
 	// ── 4. Block packer ───────────────────────────────────────────────────────
 
 	record Block(byte[] firstWordUtf8, byte[] container) {
+	}
+
+	/**
+	 * Largest definition (bytes) that fits in a block together with its headword:
+	 * block = entry (2 length + word + 0x00 + definition + 0x00) + 2 terminator.
+	 */
+	static int maxDefinitionBytes(String word) {
+		return TARGET_BLOCK_DECOMPRESSED - 2 - word.getBytes(StandardCharsets.UTF_8).length - 1 - 1 - 2;
+	}
+
+	/** End marker of a truncated definition. */
+	static final byte[] TRUNCATED_MARK = "[...] ".getBytes(StandardCharsets.UTF_8);
+
+	/**
+	 * A definition that does not fit in one block on its own (firmware
+	 * decompression buffer) is truncated and ends with "[...]"; each one is logged
+	 * with the word. Entries are replaced in place.
+	 */
+	static void truncateOversized(List<ParsedEntry> entries) {
+		for (int k = 0; k < entries.size(); k++) {
+			ParsedEntry e = entries.get(k);
+			int max = maxDefinitionBytes(e.word());
+			if (e.definition().length > max) {
+				entries.set(k, new ParsedEntry(e.word(), truncateDefinition(e.definition(), max)));
+				err(String.format("Warning: definition of '%s' is %,d bytes, more than fits in one block (%,d): truncated, ending with [...]",
+						e.word(), e.definition().length, max));
+			}
+		}
+	}
+
+	/**
+	 * Truncates an SDIC definition to at most {@code max} bytes, ending with
+	 * "[...] ". Cuts outside bold/italic spans, preferably at a newline
+	 * ({@code 0x20 0x0A 0x20}, keeping the space before it), else after a space;
+	 * never expected: at a UTF-8 character boundary, closing open spans. The
+	 * result ends with 0x20, as the firmware requires.
+	 */
+	static byte[] truncateDefinition(byte[] def, int max) {
+		int limit = max - TRUNCATED_MARK.length; // def[0, cut) + mark must fit
+		int cutNewline = -1, cutSpace = -1, depth = 0;
+		for (int i = 0; i < limit; i++) {
+			byte b = def[i];
+			if (b == FMT_BOLD || b == FMT_ITALIC) {
+				depth++;
+			} else if (b == FMT_END) {
+				depth = Math.max(0, depth - 1);
+			} else if (depth == 0 && i > 0) {
+				if (b == FMT_NEWLINE && def[i - 1] == 0x20) {
+					cutNewline = i; // keep the space before the newline
+				} else if (b == 0x20) {
+					cutSpace = i + 1; // keep the space
+				}
+			}
+		}
+		var out = new ByteArrayOutputStream(max);
+		if (cutNewline > 0 || cutSpace > 0) {
+			int cut = cutNewline > 0 ? cutNewline : cutSpace;
+			out.write(def, 0, cut);
+		} else {
+			// hard cut at a UTF-8 boundary, closing open spans (0x01 must be followed by 0x20)
+			int cut = limit - 2 * depth - 1;
+			while (cut > 0 && (def[cut] & 0xC0) == 0x80) {
+				cut--;
+			}
+			int open = 0;
+			for (int i = 0; i < cut; i++) {
+				if (def[i] == FMT_BOLD || def[i] == FMT_ITALIC) {
+					open++;
+				} else if (def[i] == FMT_END) {
+					open = Math.max(0, open - 1);
+				}
+			}
+			out.write(def, 0, cut);
+			out.write(0x20);
+			for (int i = 0; i < open; i++) {
+				out.write(FMT_END);
+				out.write(0x20);
+			}
+		}
+		out.write(TRUNCATED_MARK, 0, TRUNCATED_MARK.length);
+		return out.toByteArray();
 	}
 
 	static List<Block> packBlocks(List<ParsedEntry> entries) throws IOException {
@@ -599,6 +691,7 @@ public class ConvXdxf2Pbdic {
 	static String optionKey(String arg) {
 		return switch (arg) {
 		case "--config", "-c"     -> "config";
+		case "--def"              -> ArgsHelper.DEF_OPTION;
 		case "--in", "-i"         -> "in";
 		case "--out", "-o"        -> "out";
 		case "--lang", "-l"       -> "lang";
@@ -656,6 +749,8 @@ public class ConvXdxf2Pbdic {
 				                     else the output path without extension)
 				  -c / --config      .properties config file (namespace: xdxf2pcdic.*);
 				                     command-line options override it
+				  --def <name>=<value>
+				                     Set or override a config variable (def); repeatable
 				  -h / --help        Show this help
 
 				Examples:

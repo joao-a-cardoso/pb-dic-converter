@@ -22,6 +22,42 @@ public class ArgsHelper {
 	private final Consumer<String> logger;
 	private final Supplier<String> usage;
 
+	/** Option keys whose values are file or folder paths (shown with {@link #displayPath}). */
+	private static final java.util.Set<String> PATH_KEYS = java.util.Set.of("in", "out", "config", "langdir",
+			"terms-file", "xdxf", "dic");
+
+	/**
+	 * A path as shown in messages: relative to the current folder when inside it,
+	 * {@code <temp>/…} when inside the system temp folder, otherwise absolute.
+	 * {@code null} and {@code -} (stdin/stdout) are returned unchanged. Only for
+	 * display — the tools always use the real path.
+	 */
+	public static String displayPath(String path) {
+		if (path == null || path.equals("-")) {
+			return path;
+		}
+		try {
+			Path abs = Path.of(path).toAbsolutePath().normalize();
+			Path cwd = Path.of("").toAbsolutePath().normalize();
+			Path tmp = Path.of(System.getProperty("java.io.tmpdir")).toAbsolutePath().normalize();
+			if (abs.startsWith(cwd)) {
+				String rel = cwd.relativize(abs).toString();
+				return rel.isEmpty() ? "." : rel;
+			}
+			if (abs.startsWith(tmp)) {
+				return "<temp>/" + tmp.relativize(abs);
+			}
+			return abs.toString();
+		} catch (RuntimeException e) {
+			return path; // not a valid path: show as given
+		}
+	}
+
+	/** Where each option value came from, shown by {@link #listProperties}. */
+	private final Map<String, String> sources = new java.util.HashMap<>();
+
+	private static final String FROM_CLI = "command line", FROM_CONFIG = "config", FROM_DEFAULT = "default";
+
 	public ArgsHelper(String toolName, String namesspace, Consumer<String> logger, Supplier<String> usage) {
 		super();
 
@@ -78,7 +114,11 @@ public class ArgsHelper {
 				fail(logger, usage,
 						String.format("Error: option '%s' requires a value, got option '%s'", args[i], args[i + 1]));
 			}
-			map.put(key, args[++i]);
+			String value = args[++i];
+			if (key.equals(DEF_OPTION) && map.containsKey(key)) {
+				value = map.get(key) + '\0' + value; // repeatable: collect all --def values
+			}
+			map.put(key, value);
 		}
 		return map;
 	}
@@ -133,6 +173,53 @@ public class ArgsHelper {
 	 */
 	public Properties loadProperties(String configPath, boolean exitWhenFailed)
 			throws IOException, FileNotFoundException {
+		return loadProperties(configPath, exitWhenFailed, Map.of());
+	}
+
+	/** Option key of {@code --def <name>=<value>}; the only option that may be repeated. */
+	public static final String DEF_OPTION = "def";
+
+	private static final java.util.regex.Pattern CLI_DEF = java.util.regex.Pattern.compile("([A-Za-z0-9_]+)=(.*)",
+			java.util.regex.Pattern.DOTALL);
+
+	/**
+	 * Loads the config given with {@code -c} ({@code cli "config"}), with the
+	 * variables given with {@code --def <name>=<value>} replacing the config's
+	 * {@code def} of the same name (or adding a new variable). The command-line
+	 * variables are listed as {@code def <name>} in the configuration listing. A
+	 * malformed {@code --def} or a name given twice is an error (exit code 1).
+	 */
+	public Properties loadConfig(Map<String, String> cli) throws IOException {
+		cli.keySet().forEach(k -> sources.put(k, FROM_CLI)); // parsed from the command line
+		var cliDefs = new LinkedHashMap<String, String>();
+		String raw = cli.remove(DEF_OPTION);
+		if (raw != null) {
+			for (String def : raw.split("\0")) {
+				var m = CLI_DEF.matcher(def);
+				if (!m.matches()) {
+					log("Error: invalid --def '%s', expected: --def <name>=<value>", def);
+					System.exit(1);
+				}
+				String name = m.group(1);
+				if (cliDefs.containsKey(name)) {
+					log("Error: variable '%s' given twice with --def", name);
+					System.exit(1);
+				}
+				cliDefs.put(name, m.group(2));
+				cli.put("def " + name, m.group(2));
+				sources.put("def " + name, FROM_CLI);
+			}
+		}
+		String configPath = cli.get("config");
+		if (configPath == null && !cliDefs.isEmpty()) {
+			log("Warning: --def has no effect without a config (-c), ignoring.");
+		}
+		return loadProperties(configPath, true, cliDefs);
+	}
+
+	/** As {@link #loadProperties(String, boolean)}, with {@code cliDefs} overriding the config's variables. */
+	public Properties loadProperties(String configPath, boolean exitWhenFailed, Map<String, String> cliDefs)
+			throws IOException, FileNotFoundException {
 		var props = new Properties();
 		if (configPath != null) {
 			Path path = Path.of(configPath);
@@ -163,6 +250,7 @@ public class ArgsHelper {
 				}
 			}
 			props.load(new java.io.StringReader(body.toString()));
+			defs.putAll(cliDefs); // --def on the command line wins over the config's def
 
 			// resolve the variables, then substitute them in every value
 			var resolved = new LinkedHashMap<String, String>();
@@ -269,9 +357,25 @@ public class ArgsHelper {
 		logRaw("| Configuration (%s)", namesspace);
 		logRaw("| ");
 		int maxLen = ord.keySet().stream().mapToInt(ky -> ky.length()).max().orElse(0);
-		var format = "|   %-" + maxLen + "s : %s";
-		for (var en : ord.entrySet()) {
-			logRaw(format, en.getKey(), en.getValue());
+		int maxVal = ord.entrySet().stream()
+				.map(e -> PATH_KEYS.contains(e.getKey()) ? displayPath(e.getValue()) : e.getValue())
+				.mapToInt(v -> String.valueOf(v).length()).max().orElse(0);
+		var format = "|   %-" + maxLen + "s : %-" + Math.min(maxVal, 60) + "s   %s";
+		// options first, then the --def variables ("def <name>"), separated by an empty line
+		boolean defsStarted = false;
+		for (boolean defs : new boolean[] { false, true }) {
+			for (var en : ord.entrySet()) {
+				if (en.getKey().startsWith("def ") != defs) {
+					continue;
+				}
+				if (defs && !defsStarted) {
+					logRaw("| ");
+					defsStarted = true;
+				}
+				String src = sources.get(en.getKey());
+				String val = PATH_KEYS.contains(en.getKey()) ? displayPath(en.getValue()) : en.getValue();
+				logRaw("%s", String.format(format, en.getKey(), val, src == null ? "" : "(" + src + ")").stripTrailing());
+			}
 		}
 		logRaw("");
 	}
@@ -299,6 +403,7 @@ public class ArgsHelper {
 				String val = config.getProperty(prefixed ? ns + key : key);
 				if (val != null) {
 					cli.put(key, val);
+					sources.put(key, FROM_CONFIG);
 				}
 			}
 		}
@@ -344,6 +449,9 @@ public class ArgsHelper {
 	}
 
 	public String resolve(Map<String, String> cli, String key, String def) {
+		if (!cli.containsKey(key) && def != null) {
+			sources.put(key, FROM_DEFAULT);
+		}
 		return cli.computeIfAbsent(key, k -> def);
 	}
 
@@ -384,6 +492,9 @@ public class ArgsHelper {
 		String val = resolve(cli, key, null);
 		if (val == null || val.isBlank()) {
 			cli.put(key, def == null ? null : def.toString());
+			if (def != null) {
+				sources.put(key, FROM_DEFAULT);
+			}
 			return def;
 		}
 
@@ -400,6 +511,9 @@ public class ArgsHelper {
 		String val = resolve(cli, key, null);
 		if (val == null || val.isBlank()) {
 			cli.put(key, def == null ? null : def.toString());
+			if (def != null) {
+				sources.put(key, FROM_DEFAULT);
+			}
 			return def;
 		}
 

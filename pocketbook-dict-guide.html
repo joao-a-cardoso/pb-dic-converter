@@ -636,9 +636,11 @@ linux/
   xdxf-2-pbdic          <span class="comment"># wrapper → ConvXdxf2Pbdic.java</span>
   xdxf-2-stardict       <span class="comment"># wrapper → ConvXdxf2Stardict.java</span>
   check-pbdic           <span class="comment"># wrapper → CheckPbdic.java</span>
-  chain-kaikki-2-xdxf   <span class="comment"># kaikki-2-tab | tab-2-xdxf, driven by a config file</span>
-  chain-stardict-2-xdxf <span class="comment"># stardict-2-tab | tab-2-xdxf, driven by a config file</span>
+  chain-kaikki-2-xdxf   <span class="comment"># kaikki-2-tab → tab-2-xdxf, driven by a config file</span>
+  chain-stardict-2-xdxf <span class="comment"># stardict-2-tab → tab-2-xdxf, driven by a config file</span>
+  chain-kaikki-2-stardict <span class="comment"># kaikki-2-tab → tab-2-xdxf → xdxf-2-stardict, driven by a config file</span>
   runjava               <span class="comment"># launcher: resolves java/ and runs java --source 25</span>
+  library.sh            <span class="comment"># shared functions of the chain-* scripts (sourced, not run)</span>
 java/
   ConvStardict2Tab.java <span class="comment"># StarDict → TSV</span>
   ConvKaikki2Tab.java   <span class="comment"># Kaikki JSONL → TSV</span>
@@ -663,7 +665,9 @@ lang/                <span class="comment"># NOT in repo — download separately
 confs/
   kaikki2xdxf-pt-pt.config    <span class="comment"># Kaikki, Portuguese words → Portuguese definitions</span>
   kaikki2xdxf-en-pt.config    <span class="comment"># Kaikki, English words → Portuguese definitions</span>
-  stardict2xdxf-pt-pt.config  <span class="comment"># StarDict (reader-dict) → XDXF</span></pre>
+  stardict2xdxf-pt-pt.config  <span class="comment"># StarDict (reader-dict) → XDXF</span>
+  kaikki2stardict-pt-pt.config <span class="comment"># Kaikki PT→PT, full pipeline to StarDict</span>
+  kaikki2stardict-en-pt.config <span class="comment"># Kaikki EN→PT, full pipeline to StarDict</span></pre>
         <div class="note">
           <strong>Language files</strong> go in <code>lang/&lt;lang&gt;/</code> — this folder is <em>not</em> distributed with the toolchain. See step 2 for how to obtain them.
         </div>
@@ -725,6 +729,7 @@ confs/
           <div class="note">
             <strong>Language:</strong> <code>-l</code> takes one ISO 639-1 code — the language of the headwords to keep; entries in other languages are skipped. For a dictionary with English headwords, also pass <code>-t pt</code> to <code>tab-2-xdxf</code> (definitions language).<br>
             <strong>Kaikki data</strong> is updated regularly — re-download it (step 1) periodically to keep your dictionary current.<br>
+            <strong>Labels</strong> (<em>Etimologia</em>, <em>feminino</em>, domain topics) are translated with <code>java/term-translations_&lt;lang&gt;.properties</code> (from <code>-l</code>); use <code>--terms-file &lt;file&gt;</code> for another file — e.g. the Portuguese one for English headwords. The file used is logged.<br>
             <strong>--embedded-defs</strong> controls how compound expressions are emitted: <code>SEPARATE</code> (standalone lookup entries only), <code>KEEP</code> (embedded inside the parent entry only), or <code>BOTH</code> (default). Use <code>SEPARATE</code> to avoid artefact headwords from Kaikki expression data.
           </div>
         </div>
@@ -733,7 +738,7 @@ confs/
           <p class="step-desc">Each conversion has its own config file. All tools read it via <code>-c</code> and use their own namespace — CLI arguments always override config values.</p>
           <p class="step-desc">Property keys are prefixed with the tool name, dashes removed. Setting <code>out=-</code> or <code>in=-</code> (e.g. <code>kaikki2tab.out=-</code>, <code>tab2xdxf.in=-</code>) enables piping directly from the config.</p>
           <p class="step-desc"><strong>Prefixed or bare, never both:</strong> a shared config uses only prefixed keys (<code>tab2xdxf.in=</code>) — each tool reads its own namespace and warns about unknown keys in it (e.g. a typo such as <code>tab2xdxf.no-validate</code>). A config for a single tool may use bare keys (<code>in=</code>, <code>lang=</code>). A config that mixes both is rejected with an error listing the keys to prefix, since a bare key in a shared config would be taken by every tool.</p>
-          <p class="step-desc"><strong>Variables and comments:</strong> <code>def lang=pt</code> defines a variable, used in any value as <code>$lang</code> or <code>${lang}</code> (<code>$$</code> is a literal <code>$</code>); variables may use other variables. A <code>#</code> preceded by a space or tab starts a comment up to the end of the line (<code>C#</code> is kept; <code>\#</code> is a literal <code>#</code>). An undefined variable, a variable defined twice or a definition loop is an error.</p>
+          <p class="step-desc"><strong>Variables and comments:</strong> <code>def lang=pt</code> defines a variable, used in any value as <code>$lang</code> or <code>${lang}</code> (<code>$$</code> is a literal <code>$</code>); variables may use other variables. A <code>#</code> preceded by a space or tab starts a comment up to the end of the line (<code>C#</code> is kept; <code>\#</code> is a literal <code>#</code>). An undefined variable, a variable defined twice or a definition loop is an error. On the command line, <code>--def &lt;name&gt;=&lt;value&gt;</code> (repeatable, every tool and chain script) replaces the config's <code>def</code> of the same name — e.g. <code>--def version=2026-12</code> to build another Kaikki version without editing the config.</p>
           <pre><span class="comment"># Kaikki PT→PT with variables</span>
 def lang=pt                                  <span class="comment"># headword language</span>
 def lang_to=pt                               <span class="comment"># definition language</span>
@@ -746,17 +751,22 @@ tab2xdxf.name=$title (Kaikki)                <span class="comment"># → Wiktion
 
           <pre><span class="comment"># confs/kaikki2xdxf-pt-pt.config — Kaikki PT→PT, piped to file</span>
 
+def version=2026-11                          <span class="comment"># Kaikki data version (output file and dictionary name)</span>
+def lang=pt                                  <span class="comment"># headword language</span>
+def lang_to=pt                               <span class="comment"># definition language</span>
+def title=Wiktionary.org ${lang}-${lang_to}  <span class="comment"># start of the dictionary name and description</span>
+
 kaikki2tab.in=data/kaikki/kaikki.org-all-to-Portuguese.jsonl.gz
 kaikki2tab.out=-
-kaikki2tab.lang=pt
+kaikki2tab.lang=$lang
 kaikki2tab.embedded-defs=BOTH
 
 tab2xdxf.in=-
-tab2xdxf.out=data/out/kaikki-pt-pt13.xdxf
-tab2xdxf.lang=pt
-tab2xdxf.lang-to=pt
-tab2xdxf.name=Wiktionary.org pt-pt (Kaikki/13)
-tab2xdxf.desc=Wiktionary.org pt-pt (built from Kaikki's source data)</pre>
+tab2xdxf.out=data/out/kaikki-pt-pt-${version}.xdxf
+tab2xdxf.lang=$lang
+tab2xdxf.lang-to=$lang_to
+tab2xdxf.name=$title (Kaikki $version)
+tab2xdxf.desc=$title (built from Kaikki&#x27;s source data)</pre>
 
           <pre><span class="comment"># confs/stardict2xdxf-pt-pt.config — StarDict, piped to file</span>
 
@@ -768,10 +778,13 @@ tab2xdxf.out=data/out/readerdict-pt-pt.xdxf
 tab2xdxf.lang=pt
 tab2xdxf.name=Wiktionário PT-&gt;PT (ReaderDict)</pre>
 
-          <pre><span class="comment"># Run with the chain scripts</span>
-<span class="comment"># (run from the project root)</span>
+          <pre><span class="comment"># Run with the chain scripts (from any folder)</span>
 <span class="cmd">linux/chain-kaikki-2-xdxf</span>   <span class="arg">confs/kaikki2xdxf-pt-pt.config</span>
 <span class="cmd">linux/chain-stardict-2-xdxf</span> <span class="arg">confs/stardict2xdxf-pt-pt.config</span>
+
+<span class="comment"># Kaikki → StarDict, whole pipeline; --def overrides a config variable</span>
+<span class="cmd">linux/chain-kaikki-2-stardict</span> <span class="arg">confs/kaikki2stardict-pt-pt.config</span>
+<span class="cmd">linux/chain-kaikki-2-stardict</span> <span class="arg">confs/kaikki2stardict-pt-pt.config</span> <span class="flag">--def</span> <span class="arg">version=2026-12</span>
 
 <span class="comment"># Or pipe the tools yourself</span>
 <span class="cmd">linux/kaikki-2-tab</span> <span class="flag">-c</span> <span class="arg">confs/kaikki2xdxf-pt-pt.config</span> <span class="flag">|</span> <span class="cmd">linux/tab-2-xdxf</span> <span class="flag">-c</span> <span class="arg">confs/kaikki2xdxf-pt-pt.config</span>
@@ -780,7 +793,7 @@ tab2xdxf.name=Wiktionário PT-&gt;PT (ReaderDict)</pre>
 <span class="cmd">linux/kaikki-2-tab</span> <span class="flag">-c</span> <span class="arg">confs/kaikki2xdxf-pt-pt.config</span> <span class="flag">-l</span> <span class="arg">en</span> <span class="flag">|</span> <span class="cmd">linux/tab-2-xdxf</span> <span class="flag">-c</span> <span class="arg">confs/kaikki2xdxf-pt-pt.config</span> <span class="flag">-l</span> <span class="arg">en</span> <span class="flag">-n</span> <span class="arg">"EN-PT"</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-en-pt.xdxf</span></pre>
 
           <div class="note">
-            <strong>Chain scripts</strong> stop at <code>.xdxf</code>; run <code>xdxf-2-pbdic</code> (step 5) afterwards.<br>
+            <strong>Chain scripts</strong> run several tools from one config: <code>chain-kaikki-2-xdxf</code> and <code>chain-stardict-2-xdxf</code> stop at <code>.xdxf</code> (run <code>xdxf-2-pbdic</code>, step 5, afterwards); <code>chain-kaikki-2-stardict</code> goes on to StarDict and needs the <code>xdxf2stardict.*</code> keys (<code>confs/kaikki2stardict-*.config</code>). They stop at the first failing step and never overwrite an existing <code>.xdxf</code> with an empty one; <code>--def</code> after the config is passed to every step.<br>
             <strong>Namespaces:</strong> <code>stardict-2-tab</code> → <code>stardict2tab.*</code>, <code>kaikki-2-tab</code> → <code>kaikki2tab.*</code>, <code>tab-2-xdxf</code> → <code>tab2xdxf.*</code>, <code>xdxf-2-pbdic</code> → <code>xdxf2pcdic.*</code>, <code>check-pbdic</code> → <code>checkpbdic.*</code>.<br>
             <strong>Piping:</strong> all progress messages go to stderr, so only data flows through the pipe. XML validation runs automatically even in pipeline mode (via a temporary file) — no flags needed.
           </div>
@@ -806,14 +819,15 @@ tab2xdxf.name=Wiktionário PT-&gt;PT (ReaderDict)</pre>
 
 <span class="comment"># After a chain script (shared config) — the configs stop at .xdxf</span>
 <span class="cmd">linux/chain-kaikki-2-xdxf</span> <span class="arg">confs/kaikki2xdxf-pt-pt.config</span>
-<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/kaikki-pt-pt13.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-pt-pt13.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-m</span> <span class="arg">ALWAYS</span></pre>
+<span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/kaikki-pt-pt-2026-11.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-pt-pt-2026-11.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-m</span> <span class="arg">ALWAYS</span></pre>
         <div class="note">
           <strong>Language files:</strong> read from <code>lang/&lt;lang&gt;</code> by default (<code>lang/pt</code> for <code>-l pt</code>); use <code>-D &lt;dir&gt;</code> for another folder. It must contain <code>collates.txt</code>, <code>keyboard.txt</code>, and <code>morphems.txt</code> — see step 2.<br>
           <strong>Dictionary name:</strong> taken from the XDXF header; <code>-n</code> overrides it.<br>
           <strong>--merge-defs / -m (required):</strong> controls how duplicate headwords are handled.
           <code>ALWAYS</code> — headword match is case-insensitive; different definitions are merged (blank line between them), identical entries are dropped. Recommended for Kaikki sources.
           <code>EXACT</code> — headword match is case-sensitive; different definitions for the exact same headword are merged, identical entries are dropped. Recommended for StarDict sources.
-          <code>NEVER</code> — never merge; only byte-identical duplicates are dropped.
+          <code>NEVER</code> — never merge; only byte-identical duplicates are dropped.<br>
+          <strong>Size limit:</strong> an entry must fit in one <code>.dic</code> block (27,000 bytes, the firmware's decompression buffer). Merging stops when the next definition would not fit — it starts a new entry with the same headword; a single definition that is too large on its own is truncated at a line or word boundary and ends with <code>[...]</code>. Both are logged with the word (in the Kaikki 2026-11 data only <em>sistema</em> is affected). StarDict has no such limit.<br>
           Set via config as <code>xdxf2pcdic.merge-defs=EXACT</code> (the namespace is spelled <code>xdxf2pcdic</code>).<br>
           <strong>Output:</strong> the <code>.dic</code> file is written to the path given with <code>-o</code>.
         </div>
@@ -848,7 +862,8 @@ tab2xdxf.name=Wiktionário PT-&gt;PT (ReaderDict)</pre>
         <pre><span class="cmd">linux/xdxf-2-stardict</span> <span class="flag">-i</span> <span class="arg">data/out/kaikki-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-pt.d</span> <span class="flag">-m</span> <span class="arg">ALWAYS</span> <span class="flag">-z</span> <span class="arg">true</span></pre>
         <div class="note">
           <strong>Output:</strong> <code>-o</code> is a directory; it receives <code>stardict.ifo</code>, <code>stardict.idx</code> and <code>stardict.dict.dz</code> (<code>stardict.dict</code> with <code>-z false</code>).
-          <code>-m</code> works as in step 5.
+          Only these <code>stardict.*</code> files (and a stale <code>stardict.syn</code>) are replaced — other files in the folder are left alone. <code>-m</code> works as in step 5, without the <code>.dic</code> size limit.<br>
+          <strong>In one step:</strong> <code>linux/chain-kaikki-2-stardict confs/kaikki2stardict-pt-pt.config</code> builds the XDXF and the StarDict from the Kaikki dump (see the shared-config tab in step 4).
         </div>
       </div>
     </div>

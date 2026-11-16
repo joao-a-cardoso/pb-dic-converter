@@ -88,15 +88,16 @@ public class ConvKaikki2Tab {
 		var cli = parseArgs(args);
 
 		// Load config file if specified
-		String configPath = cli.get("config");
 		var argsHlp = new ArgsHelper(TOOL, "kaikki2tab", er -> err(er), () -> usage());
 
-		Properties config = argsHlp.loadProperties(configPath, true);
-		argsHlp.mergeConfig2Cli(List.of("in", "out", "lang", "embedded-defs"), cli, config);
+		Properties config = argsHlp.loadConfig(cli);
+		argsHlp.mergeConfig2Cli(List.of("in", "out", "lang", "embedded-defs", "terms-file"), cli, config);
 
 		String input = argsHlp.require(cli, "in", "--in/-i");
 		String output = argsHlp.require(cli, "out", "--out/-o");
 		String lang = argsHlp.requireLang(cli, "lang", "--lang/-l");
+		boolean termFileGiven = cli.containsKey("terms-file");
+		Path termFile = Path.of(argsHlp.resolve(cli, "terms-file", defaultTermFile(lang).toString()));
 
 		String ewArg = argsHlp.resolveUC(cli, "embedded-defs", "BOTH");
 		if (!ewArg.equals("KEEP") && !ewArg.equals("SEPARATE") && !ewArg.equals("BOTH")) {
@@ -115,6 +116,7 @@ public class ConvKaikki2Tab {
 		}
 
 		argsHlp.listProperties(cli);
+		loadTermTranslations(termFile, termFileGiven);
 
 		// Detect gzip compression by extension
 		String fileName = inFile.getFileName().toString().toLowerCase();
@@ -256,6 +258,7 @@ public class ConvKaikki2Tab {
 		if (posTitle == null) {
 			posTitle = getStr(entry, "pos");
 		}
+		posTitle = properNounTitle(entry, posTitle, senses);
 		String gender = tags.contains("masculine") ? "masculine" : tags.contains("feminine") ? "feminine" : null;
 
 		if (posTitle != null) {
@@ -278,7 +281,7 @@ public class ConvKaikki2Tab {
 				}
 			}
 			if (!plurals.isEmpty()) {
-				sbDef.append("<p><i>" + translateTermCap("plural") + " :</i> ")
+				sbDef.append("<p>" + formatLabel("plural"))
 						.append(encodeEntities(false, String.join(", ", plurals)))//
 						.append("</p>");
 			}
@@ -290,11 +293,13 @@ public class ConvKaikki2Tab {
 			var ipas = new ArrayList<String>();
 			boolean renderTag = mapSounds.size() > 1;
 			for (var snd : mapSounds.entrySet()) {
-				ipas.add(snd.getValue().get(0) + (renderTag ? "<i><small>(" + snd.getKey() + ")</small></i>" : ""));
+				// the tag "IPA" is not a region (every transcription is IPA): no label for it
+				boolean label = renderTag && !snd.getKey().isEmpty() && !snd.getKey().equalsIgnoreCase("IPA");
+				ipas.add(snd.getValue().get(0) + (label ? "<i><small>(" + snd.getKey() + ")</small></i>" : ""));
 			}
 
 			if (!ipas.isEmpty()) {
-				sbDef.append("<p><i>" + translateTermCap("sounds") + ": </i> ")
+				sbDef.append("<p>" + formatLabel("sounds"))
 						.append(encodeEntities(true, String.join(", ", ipas)))//
 						.append("</p>");
 			}
@@ -326,7 +331,7 @@ public class ConvKaikki2Tab {
 			if (etym.startsWith(":"))
 				etym = etym.substring(1).strip();
 			sbDef.append("<p>")//
-					.append("<i>" + translateTermCap("ethymology") + ": </i> ")//
+					.append(formatLabel("ethymology"))//
 					.append(encodeEntities(false, etym))//
 					.append("</p>");
 		}
@@ -488,6 +493,31 @@ public class ConvKaikki2Tab {
 		{
 			return null;
 		}
+	}
+
+	/** Translation key of the part-of-speech title of proper nouns. */
+	static final String PROPER_NOUN_KEY = "proper-noun";
+
+	/**
+	 * Part-of-speech title of proper nouns: an entry with pos "name", or a "noun"
+	 * whose senses all have the topic "anthroponym" (the source mostly classifies
+	 * names as plain nouns), is titled with the translation of "proper-noun". Without
+	 * such a translation the source's own title is kept.
+	 */
+	static String properNounTitle(Map<String, ?> entry, String posTitle, List<Map<String, ?>> senses) {
+		String pos = getStr(entry, "pos");
+		boolean properNoun = "name".equals(pos) || ("noun".equals(pos) && !listIsEmpty(senses)
+				&& senses.stream().allMatch(sense -> getList(sense, "topics", null).stream()
+						.anyMatch(t -> "anthroponym".equalsIgnoreCase(String.valueOf(t)))));
+		if (!properNoun || !termTranslations.containsKey(PROPER_NOUN_KEY)) {
+			return posTitle;
+		}
+		return translateRaw(PROPER_NOUN_KEY).substring(0, 1).toUpperCase() + translateRaw(PROPER_NOUN_KEY).substring(1);
+	}
+
+	/** Inline label: "<i>Label:</i> " — translated, capitalised, colon inside the italics. */
+	static String formatLabel(String term) {
+		return "<i>" + translateTermCap(term) + ":</i> ";
 	}
 
 	static String formatTitle(boolean big, String title) {
@@ -671,9 +701,48 @@ public class ConvKaikki2Tab {
 		return " <i>[" + result + "]</i> ";
 	}
 
+	/** Label translations (english term in lower case → translation). */
+	static Map<String, String> termTranslations = Map.of();
+
 	/**
-	 * Returns translated term to the given language, falling back to received one.
-	 * Not escaped for xml.
+	 * Default translation file: {@code term-translations_<lang>.properties} in the
+	 * folder of this tool's source file (java/), or the current folder when the
+	 * source location is unknown.
+	 */
+	static Path defaultTermFile(String lang) {
+		String src = System.getProperty("jdk.launcher.sourcefile");
+		Path dir = src != null ? Path.of(src).toAbsolutePath().getParent() : Path.of("");
+		return dir.resolve("term-translations_" + lang + ".properties").normalize();
+	}
+
+	/**
+	 * Loads the label translations and logs the file used. A file given with
+	 * --terms-file must exist; a missing default file only means that labels
+	 * are not translated.
+	 */
+	static void loadTermTranslations(Path file, boolean given) throws Exception {
+		if (!Files.exists(file)) {
+			if (given) {
+				abort("Error: term translation file not found: %s", file);
+			}
+			err("Term translations: none (%s not found) — labels are not translated", ArgsHelper.displayPath(file.toString()));
+			return;
+		}
+		var props = new Properties();
+		try (var r = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+			props.load(r);
+		}
+		var map = new LinkedHashMap<String, String>();
+		for (String key : props.stringPropertyNames()) {
+			map.put(key.trim().toLowerCase(java.util.Locale.ROOT), props.getProperty(key).trim());
+		}
+		termTranslations = map;
+		err("Term translations: %s (%d terms)", ArgsHelper.displayPath(file.toString()), map.size());
+	}
+
+	/**
+	 * Returns the translated term (case-insensitive lookup), falling back to the
+	 * received one. Not escaped for xml.
 	 */
 	static String translateRaw(Object term) {
 		String strTerm = term == null ? null : term.toString().trim();
@@ -681,11 +750,7 @@ public class ConvKaikki2Tab {
 		if (strIsEmpty(strTerm))
 			return "";
 
-		String result = null;
-		// TODO: read mapping from a parameter file, using language stored in global
-		// langTo
-
-		// by default return the received translateTerm
+		String result = termTranslations.get(strTerm.toLowerCase(java.util.Locale.ROOT));
 		return result != null ? result : strTerm;
 	}
 
@@ -781,10 +846,12 @@ public class ConvKaikki2Tab {
 	static String optionKey(String arg) {
 		return switch (arg) {
 		case "--config", "-c"        -> "config";
+		case "--def"                 -> ArgsHelper.DEF_OPTION;
 		case "--in", "-i"            -> "in";
 		case "--out", "-o"           -> "out";
 		case "--lang", "-l"          -> "lang";
 		case "--embedded-defs", "-e" -> "embedded-defs";
+		case "--terms-file"          -> "terms-file";
 		default -> null;
 		};
 	}
@@ -811,8 +878,12 @@ public class ConvKaikki2Tab {
 				                          KEEP     — only embedded in the parent word's definition
 				                          SEPARATE — only as their own standalone entries
 				                          BOTH     — both embedded and standalone
+				  --terms-file          .properties file translating the labels (english-term=translation)
+				                        (default: term-translations_<lang>.properties next to this
+				                        tool's source, in java/); the file used is logged
 				  -c / --config         .properties config file (namespace: kaikki2tab.*);
 				                        command-line options override it
+				  --def <name>=<value>  Set or override a config variable (def); repeatable
 				  -h / --help           Show this help
 
 				Examples:

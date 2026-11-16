@@ -10,8 +10,8 @@ fi
 
 file_java="$1"
 
-loc_self=$(dirname $(realpath $0))
-loc_java="$(dirname $loc_self)/java"
+loc_self="$(dirname "$(realpath "$0")")"
+loc_java="$(dirname "$loc_self")/java"
 
 shift
 

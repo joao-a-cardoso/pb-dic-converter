@@ -25,14 +25,11 @@ import shared.XdxfHelper.XdxfHeader;
  * For usage, options and examples run {@code linux/tab-2-xdxf --help}.
  *
  * <p>
- * <b>Definition cleaning</b> (see {@code shared.XmlHelper}):
- * <ul>
- * <li>Strips all tag attributes</li>
- * <li>Keeps only whitelisted tags ({@code XmlHelper.ALLOWED_TAGS}); void tags
- * ({@code br, hr, img}) are self-closed</li>
- * <li>Escapes bare {@code &}, {@code <}, {@code >}</li>
- * <li>Replaces non-breaking spaces with regular spaces</li>
- * </ul>
+ * <b>Definition cleaning</b> ({@code shared.XmlHelper.cleanHtml}): only the
+ * tags in {@code XmlHelper.ALLOWED_TAGS} are kept, without attributes (void tags
+ * such as {@code br} are self-closed); other tags are dropped, keeping their
+ * text; unbalanced tags are fixed; {@code &} and {@code <} that are not XML are
+ * escaped; common HTML entities become characters.
  * The output is validated with Java's SAX parser; on failure the output is
  * deleted and the tool exits with code 1.
  */
@@ -68,9 +65,8 @@ public class ConvTab2Xdxf {
 		var cli = parseArgs(args);
 
 		// Load config file if specified
-		String configPath = cli.get("config");
 		var argsHlp = new ArgsHelper(TOOL, "tab2xdxf", er -> err(er), () -> usage());
-		Properties config = argsHlp.loadProperties(configPath, true);
+		Properties config = argsHlp.loadConfig(cli);
 		argsHlp.mergeConfig2Cli(List.of("in", "out", "name", "desc", "lang", "lang-to", "validate"), cli, config);
 
 		String input = argsHlp.require(cli, "in", "--in/-i");
@@ -157,6 +153,7 @@ public class ConvTab2Xdxf {
 	static String optionKey(String arg) {
 		return switch (arg) {
 		case "--config", "-c"   -> "config";
+		case "--def"            -> ArgsHelper.DEF_OPTION;
 		case "--in", "-i"       -> "in";
 		case "--out", "-o"      -> "out";
 		case "--lang", "-l"     -> "lang";
@@ -193,6 +190,8 @@ public class ConvTab2Xdxf {
 				                   with -o - it is validated in a temp file before streaming
 				  -c / --config    .properties config file (namespace: tab2xdxf.*);
 				                   command-line options override it
+				  --def <name>=<value>
+				                   Set or override a config variable (def); repeatable
 				  -h / --help      Show this help
 
 				Examples:

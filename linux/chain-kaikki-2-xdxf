@@ -1,14 +1,18 @@
-#!/bin/sh
-set -e
+#!/usr/bin/bash
+# Pipeline Kaikki -> XDXF, driven by one config file:
+#   kaikki-2-tab -> tab-2-xdxf  (kaikki2tab.*, tab2xdxf.*)   -> .xdxf
+# Can be run from any folder; the config's relative paths are taken from the
+# project root (the folder above linux/).
+# --def <name>=<value> (repeatable) sets or overrides a config variable; it is
+# passed to every step, e.g.  --def version=2026-12
+source "$(dirname "$(realpath "$0")")/library.sh"
 
-if [ -z "$1" ]; then
-  echo "Usage: chain-kaikki-2-xdxf <config-file>" >&2
-  exit 1
-fi
+TOOL=chain-kaikki-2-xdxf
+STEPS=2
+parse_chain_args "$@"
+goto_project_root
+make_temp_tsv   # first step writes a temp TSV: a failure never overwrites the .xdxf
 
-if [ ! -f "$1" ]; then
-  echo "Error: config file not found: $1" >&2
-  exit 1
-fi
-
-linux/kaikki-2-tab -c "$1" | linux/tab-2-xdxf -c "$1" -v true
+step "Kaikki -> TSV"; linux/kaikki-2-tab -c "$CONFIG" "${DEFS[@]}" -o "$TSV"
+step "TSV -> XDXF";   linux/tab-2-xdxf   -c "$CONFIG" "${DEFS[@]}" -i "$TSV"
+done_msg

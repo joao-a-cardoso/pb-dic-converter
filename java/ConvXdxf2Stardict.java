@@ -46,6 +46,9 @@ public class ConvXdxf2Stardict {
 
 	static final String TOOL = "xdxf-2-stardict";
 
+	/** Files of a StarDict dictionary named "stardict" (.syn: synonyms, not written but removed if stale). */
+	static final List<String> STARDICT_EXTENSIONS = List.of(".ifo", ".idx", ".dict", ".dict.dz", ".syn");
+
 	static final String version = "2.4.2";
 
 	static void err(String msg, Object... args) {
@@ -75,8 +78,7 @@ public class ConvXdxf2Stardict {
 
 		var cli = parseArgs(args);
 		var argsHlp = new ArgsHelper(TOOL, "xdxf2stardict", er -> err(er), () -> usage());
-		String configPath = cli.get("config");
-		Properties config = argsHlp.loadProperties(configPath, true);
+		Properties config = argsHlp.loadConfig(cli);
 		argsHlp.mergeConfig2Cli(List.of("in", "out", "name", "merge-defs", "compress"), cli, config);
 
 		String inPath = argsHlp.require(cli, "in", "--in/-i");
@@ -168,16 +170,19 @@ public class ConvXdxf2Stardict {
 		err("Writing...");
 		Path outPath = Path.of(outDir);
 		Files.createDirectories(outPath);
-		// remove existing files
-		Files.list(outPath).forEach(pa -> pa.toFile().delete());
+		// remove only the files of a previous StarDict build in this folder (never
+		// anything else: the folder may hold other files)
+		for (String ext : STARDICT_EXTENSIONS) {
+			Files.deleteIfExists(outPath.resolve("stardict" + ext));
+		}
 		writeStardict(compress, entries, outPath, name, description);
 
-		String extensions = Files.list(outPath) //
-				.map(pa -> "." + pa.getFileName().toString().split("\\.", 2)[1])//
+		String extensions = STARDICT_EXTENSIONS.stream()
+				.filter(ext -> Files.exists(outPath.resolve("stardict" + ext)))
 				.collect(Collectors.joining(", "));
 
 		err(String.format("Done. %d entries written to %s. {%s}.", entries.size(), //
-				outPath.toString(), extensions));
+				ArgsHelper.displayPath(outPath.toString()), extensions));
 	}
 
 	// ── Html Parser for Stardict ──────────────────────────────────────────────
@@ -290,6 +295,7 @@ public class ConvXdxf2Stardict {
 	static String optionKey(String arg) {
 		return switch (arg) {
 		case "--config", "-c"     -> "config";
+		case "--def"              -> ArgsHelper.DEF_OPTION;
 		case "--in", "-i"         -> "in";
 		case "--out", "-o"        -> "out";
 		case "--name", "-n"       -> "name";
@@ -325,6 +331,8 @@ public class ConvXdxf2Stardict {
 				                     else the output path without extension)
 				  -c / --config      .properties config file (namespace: xdxf2stardict.*);
 				                     command-line options override it
+				  --def <name>=<value>
+				                     Set or override a config variable (def); repeatable
 				  -h / --help        Show this help
 
 				Examples:
