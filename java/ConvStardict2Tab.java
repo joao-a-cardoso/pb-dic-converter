@@ -13,7 +13,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -58,8 +57,9 @@ public class ConvStardict2Tab {
 
 	// ── main ──────────────────────────────────────────────────────────────────
 	public static void main(String[] args) throws Exception {
-		if (args.length == 0 || Arrays.asList(args).contains("--help")) {
-			abort(usage());
+		if (args.length == 0) { // -h / --help is handled by ArgsHelper.parse
+			ArgsHelper.displayUsage(ConvStardict2Tab::usage, System.err);
+			System.exit(1);
 		}
 
 		var cli = parseArgs(args);
@@ -179,7 +179,7 @@ public class ConvStardict2Tab {
 	}
 
 	static String usage() {
-		return """
+		return TOOL + ": " + """
 				Convert a StarDict dictionary to TSV (word<TAB>definition).
 
 				Usage:
@@ -193,6 +193,7 @@ public class ConvStardict2Tab {
 				Optional:
 				  -c / --config  .properties config file (namespace: stardict2tab.*);
 				                 command-line options override it
+				  -h / --help    Show this help
 
 				Examples:
 				  linux/stardict-2-tab -i data/stardict/dict-pt-pt/dict-data.ifo -o data/out/dict-pt-pt.tsv

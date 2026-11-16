@@ -4,7 +4,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -88,8 +87,8 @@ public class CheckPbdic {
 
 	// ── main ──────────────────────────────────────────────────────────────────
 	public static void main(String[] args) throws Exception {
-		if (args.length == 0 || Arrays.asList(args).contains("--help")) {
-			err(usage());
+		if (args.length == 0) { // -h / --help is handled by ArgsHelper.parse
+			ArgsHelper.displayUsage(CheckPbdic::usage, System.err);
 			System.exit(1);
 		}
 
@@ -102,7 +101,7 @@ public class CheckPbdic {
 
 		String xdxfPath = argsHlp.require(cli, "xdxf", "--xdxf/-x");
 		String dicPath = argsHlp.require(cli, "dic", "--dic/-d");
-		String lang = argsHlp.require(cli, "lang", "--lang/-l");
+		String lang = argsHlp.requireLang(cli, "lang", "--lang/-l");
 		String langDir = argsHlp.resolve(cli, "langdir", "lang/" + lang);
 		Integer sample = argsHlp.resolveInt(cli, "sample", 20);
 
@@ -680,6 +679,7 @@ public class CheckPbdic {
 				  -D / --langdir   Language files dir with collates.txt (default: lang/<lang>)
 				  -c / --config    .properties config file (namespace: checkpbdic.*);
 				                   command-line options override it
+				  -h / --help      Show this help
 
 				Exit code: 0 = all checks passed; 1 = a check failed, or invalid arguments/files.
 

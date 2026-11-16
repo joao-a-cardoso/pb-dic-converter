@@ -1,14 +1,15 @@
 package shared;
 
-import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -24,8 +25,9 @@ public class ArgsHelper {
 	public ArgsHelper(String toolName, String namesspace, Consumer<String> logger, Supplier<String> usage) {
 		super();
 
-		if (namesspace.endsWith(".")) {
-			namesspace = namesspace.substring(0, namesspace.lastIndexOf('.') - 1);
+		// accept "tab2xdxf" or "tab2xdxf." — the "." separator is added when keys are looked up
+		while (namesspace.endsWith(".")) {
+			namesspace = namesspace.substring(0, namesspace.length() - 1);
 		}
 
 		this.toolName = toolName;
@@ -50,9 +52,19 @@ public class ArgsHelper {
 	 *                  </ul>
 	 *                  A lone {@code -} (stdin/stdout) is never an option, so it is
 	 *                  accepted as a value.
+	 *
+	 *                  {@code -h} or {@code --help} anywhere on the command line
+	 *                  prints the usage to stdout and exits with code 0 (usage
+	 *                  shown because of an error goes to the logger, i.e. stderr).
 	 */
 	public static Map<String, String> parse(String[] args, Function<String, String> optionKey,
 			Consumer<String> logger, Supplier<String> usage) {
+		for (String arg : args) {
+			if (arg.equals("-h") || arg.equals("--help")) {
+				displayUsage(usage, System.out);
+				System.exit(0);
+			}
+		}
 		var map = new LinkedHashMap<String, String>();
 		for (int i = 0; i < args.length; i++) {
 			String key = optionKey.apply(args[i]);
@@ -73,10 +85,22 @@ public class ArgsHelper {
 
 	private static void fail(Consumer<String> logger, Supplier<String> usage, String msg) {
 		logger.accept(msg);
-		if (usage != null) {
-			logger.accept(usage.get());
-		}
+		displayUsage(usage, System.err);
 		System.exit(1);
+	}
+
+	/**
+	 * Prints the usage text to {@code out}: {@code System.out} when help was
+	 * requested (-h / --help), {@code System.err} when shown because of an error.
+	 * The usage text starts with the tool name, so it is printed as is.
+	 *
+	 * @throws NullPointerException if {@code out} is null (a programming error)
+	 */
+	public static void displayUsage(Supplier<String> usage, PrintStream out) {
+		Objects.requireNonNull(out, "displayUsage: out must not be null");
+		if (usage != null) {
+			out.println(usage.get());
+		}
 	}
 
 	/**
@@ -92,7 +116,21 @@ public class ArgsHelper {
 		return dot > 0 ? name.substring(0, dot) : name;
 	}
 
-	/** Tries to load properties from the given file name */
+	/**
+	 * Loads a config file ({@code .properties} format) with two extensions:
+	 * <ul>
+	 * <li><b>End-of-line comments:</b> a {@code #} preceded by a space or tab
+	 * starts a comment ({@code tab2xdxf.lang=pt   # Portuguese}). A {@code #}
+	 * without whitespace before it is kept ({@code C#}); write {@code \#} for a
+	 * literal {@code #} after a space. Lines starting with {@code #} are
+	 * comments, as usual.</li>
+	 * <li><b>Variables:</b> {@code def lang=pt} defines a variable, used in values
+	 * as {@code $lang} or {@code ${lang}} ({@code $$} = a literal {@code $}).
+	 * Variables may use other variables. An undefined variable, a variable
+	 * defined twice or a definition loop is an error (exit code 1).</li>
+	 * </ul>
+	 * Then checks the key style (see {@link #checkKeyStyle}).
+	 */
 	public Properties loadProperties(String configPath, boolean exitWhenFailed)
 			throws IOException, FileNotFoundException {
 		var props = new Properties();
@@ -105,11 +143,124 @@ public class ArgsHelper {
 				}
 				return props;
 			}
-			try (var r = new java.io.InputStreamReader(new FileInputStream(path.toFile()), StandardCharsets.UTF_8)) {
-				props.load(r);
+			var defs = new LinkedHashMap<String, String>();
+			var body = new StringBuilder();
+			int lineNo = 0;
+			for (String line : Files.readAllLines(path, StandardCharsets.UTF_8)) {
+				lineNo++;
+				line = stripComment(line);
+				var def = DEF_LINE.matcher(line);
+				if (def.matches()) {
+					String name = def.group(1);
+					if (defs.containsKey(name)) {
+						configError(path, "variable '%s' defined twice (line %d)", name, lineNo);
+					}
+					defs.put(name, def.group(2).strip());
+				} else if (line.strip().startsWith("def ") || line.strip().startsWith("def\t")) {
+					configError(path, "invalid definition at line %d, expected: def <name>=<value>", lineNo);
+				} else {
+					body.append(line).append('\n');
+				}
 			}
+			props.load(new java.io.StringReader(body.toString()));
+
+			// resolve the variables, then substitute them in every value
+			var resolved = new LinkedHashMap<String, String>();
+			for (String name : defs.keySet()) {
+				resolveVar(path, name, defs, resolved, new java.util.ArrayDeque<>());
+			}
+			for (String key : props.stringPropertyNames()) {
+				props.setProperty(key, substitute(path, props.getProperty(key), "'" + key + "'", defs, resolved,
+						new java.util.ArrayDeque<>()));
+			}
+			checkKeyStyle(path, props);
 		}
 		return props;
+	}
+
+	/** {@code def <name>=<value>}; name: letters, digits, '_'. */
+	private static final java.util.regex.Pattern DEF_LINE = java.util.regex.Pattern
+			.compile("\\s*def[ \\t]+([A-Za-z0-9_]+)\\s*=(.*)");
+
+	/** {@code $$}, {@code ${name}} or {@code $name}. */
+	private static final java.util.regex.Pattern VAR_REF = java.util.regex.Pattern
+			.compile("\\$(?:(\\$)|\\{([A-Za-z0-9_]+)\\}|([A-Za-z0-9_]+))");
+
+	/** Removes an end-of-line comment: a '#' preceded by a space or tab. */
+	static String stripComment(String line) {
+		for (int i = 1; i < line.length(); i++) {
+			char c = line.charAt(i - 1);
+			if (line.charAt(i) == '#' && (c == ' ' || c == '\t')) {
+				return line.substring(0, i).stripTrailing();
+			}
+		}
+		return line;
+	}
+
+	private String resolveVar(Path path, String name, Map<String, String> defs, Map<String, String> resolved,
+			java.util.Deque<String> stack) {
+		if (resolved.containsKey(name)) {
+			return resolved.get(name);
+		}
+		if (stack.contains(name)) {
+			var loop = new java.util.ArrayList<>(stack);
+			java.util.Collections.reverse(loop);
+			loop.add(name);
+			configError(path, "variable loop: %s", String.join(" -> ", loop));
+		}
+		stack.push(name);
+		String value = substitute(path, defs.get(name), "def " + name, defs, resolved, stack);
+		stack.pop();
+		resolved.put(name, value);
+		return value;
+	}
+
+	private String substitute(Path path, String value, String where, Map<String, String> defs,
+			Map<String, String> resolved, java.util.Deque<String> stack) {
+		var m = VAR_REF.matcher(value);
+		var out = new StringBuilder();
+		while (m.find()) {
+			String replacement;
+			if (m.group(1) != null) {
+				replacement = "$";
+			} else {
+				String name = m.group(2) != null ? m.group(2) : m.group(3);
+				if (!defs.containsKey(name)) {
+					configError(path, "undefined variable '$%s' in %s", name, where);
+				}
+				replacement = resolveVar(path, name, defs, resolved, stack);
+			}
+			m.appendReplacement(out, java.util.regex.Matcher.quoteReplacement(replacement));
+		}
+		m.appendTail(out);
+		return out.toString();
+	}
+
+	private void configError(Path path, String msg, Object... args) {
+		log("Error: config %s: %s", path, String.format(msg, args));
+		System.exit(1);
+	}
+
+	/** A key is prefixed when it has a namespace, e.g. {@code tab2xdxf.in}. */
+	private static boolean isPrefixed(String key) {
+		return key.contains(".");
+	}
+
+	/**
+	 * A config uses either only bare keys ({@code in=}, for a single tool) or only
+	 * prefixed keys ({@code tab2xdxf.in=}, shareable by several tools). Mixing
+	 * them is an error: a bare key in a shared config would be taken by every
+	 * tool. Logs the bare keys and exits with code 1.
+	 */
+	private void checkKeyStyle(Path path, Properties props) {
+		var names = props.stringPropertyNames();
+		if (names.stream().anyMatch(ArgsHelper::isPrefixed)) {
+			var bare = names.stream().filter(k -> !isPrefixed(k)).sorted().toList();
+			if (!bare.isEmpty()) {
+				log("Error: config %s mixes prefixed and bare keys; add a prefix to: %s", path, String.join(", ", bare));
+				System.exit(1);
+			}
+		}
 	}
 
 	public void listProperties(Map<String, String> cli) {
@@ -125,17 +276,27 @@ public class ArgsHelper {
 		logRaw("");
 	}
 
-	/** Merge props into cli (cli wins) */
+	/**
+	 * Merge config values into cli (cli wins). A prefixed config (see
+	 * {@link #checkKeyStyle}) is read through this tool's namespace only
+	 * ({@code tab2xdxf.in}); keys of other namespaces are ignored, keys of this
+	 * namespace that are not in {@code myArgs} are reported as unknown. A config
+	 * with only bare keys ({@code in}) is read as is.
+	 */
 	public void mergeConfig2Cli(List<String> myArgs, Map<String, String> cli, Properties config) {
 
 		String ns = namesspace + ".";
+		boolean prefixed = config.stringPropertyNames().stream().anyMatch(ArgsHelper::isPrefixed);
+
+		if (prefixed) {
+			config.stringPropertyNames().stream().filter(k -> k.startsWith(ns))
+					.filter(k -> !myArgs.contains(k.substring(ns.length()))).sorted()
+					.forEach(k -> log("Warning: unknown config key '%s', ignoring.", k));
+		}
 
 		for (String key : myArgs) {
 			if (!cli.containsKey(key)) {
-				String val = config.getProperty(ns + key);
-				if (val == null) {
-					val = config.getProperty(key);
-				}
+				String val = config.getProperty(prefixed ? ns + key : key);
 				if (val != null) {
 					cli.put(key, val);
 				}
@@ -147,9 +308,7 @@ public class ArgsHelper {
 		String val = cli.get(key);
 		if (val == null) {
 			log("Error: missing required argument %s", desc);
-			if (usage != null) {
-				log(usage.get());
-			}
+			displayUsage(usage, System.err);
 			System.exit(1);
 		}
 		return val;
@@ -186,6 +345,34 @@ public class ArgsHelper {
 
 	public String resolve(Map<String, String> cli, String key, String def) {
 		return cli.computeIfAbsent(key, k -> def);
+	}
+
+	/**
+	 * Required language code: a two-letter ISO 639-1 code in any case. Returns it
+	 * in lower case (also stored back in {@code cli}); logs an error and exits
+	 * with code 1 when it is missing or invalid.
+	 */
+	public String requireLang(Map<String, String> cli, String key, String desc) {
+		return checkLang(cli, key, desc, require(cli, key, desc));
+	}
+
+	/**
+	 * Optional language code (default {@code def}), validated and lower-cased as
+	 * in {@link #requireLang}.
+	 */
+	public String resolveLang(Map<String, String> cli, String key, String desc, String def) {
+		return checkLang(cli, key, desc, resolve(cli, key, def));
+	}
+
+	private String checkLang(Map<String, String> cli, String key, String desc, String val) {
+		if (!LangHelper.validIso2(val)) {
+			log("Error: invalid language code '%s' for %s: expected a two-letter ISO 639-1 code (e.g. pt, en)", val,
+					desc);
+			System.exit(1);
+		}
+		String code = LangHelper.normalize(val);
+		cli.put(key, code);
+		return code;
 	}
 
 	public String resolveUC(Map<String, String> cli, String key, String def) {

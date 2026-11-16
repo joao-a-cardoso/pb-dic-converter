@@ -1,33 +1,37 @@
 package shared;
 
-import java.util.Map;
+import java.util.Locale;
+import java.util.Set;
 
+/**
+ * Language codes: two-letter ISO 639-1 codes (e.g. pt, en), accepted in any
+ * case (language codes are case-insensitive) and used in lower case.
+ */
 public class LangHelper {
 
-	// ISO 639-1 → ISO 639-2 mapping
-	private static final Map<String, String> ISO2_TO_ISO3 = Map.ofEntries(Map.entry("pt", "POR"),
-			Map.entry("en", "ENG"), Map.entry("es", "SPA"), Map.entry("fr", "FRA"), Map.entry("de", "DEU"),
-			Map.entry("it", "ITA"), Map.entry("nl", "NLD"), Map.entry("ru", "RUS"), Map.entry("zh", "ZHO"),
-			Map.entry("ja", "JPN"), Map.entry("ar", "ARA"), Map.entry("pl", "POL"), Map.entry("sv", "SWE"),
-			Map.entry("da", "DAN"), Map.entry("fi", "FIN"), Map.entry("nb", "NOB"), Map.entry("cs", "CES"),
-			Map.entry("hu", "HUN"), Map.entry("ro", "RON"), Map.entry("tr", "TUR"));
+	/** All ISO 639-1 codes known to the JDK (lower case). */
+	private static final Set<String> ISO2 = Set.of(Locale.getISOLanguages());
 
+	/** Trims and lower-cases a language code; {@code null} stays {@code null}. */
+	public static String normalize(String lang) {
+		return lang == null ? null : lang.trim().toLowerCase(Locale.ROOT);
+	}
+
+	/** True when {@code lang} is a two-letter ISO 639-1 code, in any case. */
 	public static boolean validIso2(String lang) {
-		return lang == null ? false : ISO2_TO_ISO3.containsKey(lang);
+		String code = normalize(lang);
+		return code != null && code.length() == 2 && ISO2.contains(code);
 	}
 
-	public static boolean validIso3(String lang) {
-		return lang == null ? false : ISO2_TO_ISO3.containsValue(lang);
-	}
-
+	/**
+	 * ISO 639-1 → ISO 639-2 (terminology) code in upper case, as used by XDXF,
+	 * e.g. pt → POR, de → DEU. {@code null} → ENG.
+	 */
 	public static String langIso2toIso3(String lang) {
-		if (lang == null)
+		String code = normalize(lang);
+		if (code == null)
 			return "ENG";
-		if (lang.length() == 2) {
-			String mapped = ISO2_TO_ISO3.get(lang.toLowerCase());
-			return mapped != null ? mapped : lang.toUpperCase();
-		}
-		return lang.toUpperCase();
+		return Locale.of(code).getISO3Language().toUpperCase(Locale.ROOT);
 	}
 
 }

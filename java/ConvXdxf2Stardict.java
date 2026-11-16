@@ -68,8 +68,9 @@ public class ConvXdxf2Stardict {
 
 	// ── main ──────────────────────────────────────────────────────────────────
 	public static void main(String[] args) throws Exception {
-		if (args.length == 0 || Arrays.asList(args).contains("--help")) {
-			abort(usage());
+		if (args.length == 0) { // -h / --help is handled by ArgsHelper.parse
+			ArgsHelper.displayUsage(ConvXdxf2Stardict::usage, System.err);
+			System.exit(1);
 		}
 
 		var cli = parseArgs(args);
@@ -303,8 +304,7 @@ public class ConvXdxf2Stardict {
 	}
 
 	static String usage() {
-
-		return """
+		return TOOL + ": " + """
 				Convert an XDXF dictionary to StarDict format (HTML definitions).
 
 				Usage:
@@ -325,6 +325,7 @@ public class ConvXdxf2Stardict {
 				                     else the output path without extension)
 				  -c / --config      .properties config file (namespace: xdxf2stardict.*);
 				                     command-line options override it
+				  -h / --help        Show this help
 
 				Examples:
 				  linux/xdxf-2-stardict -i data/out/kaikki-pt.xdxf -o data/out/kaikki-pt.d -m EXACT -z true

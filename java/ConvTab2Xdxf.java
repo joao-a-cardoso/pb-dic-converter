@@ -7,7 +7,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -61,8 +60,9 @@ public class ConvTab2Xdxf {
 
 	// ── main ──────────────────────────────────────────────────────────────────
 	public static void main(String[] args) throws Exception {
-		if (args.length == 0 || Arrays.asList(args).contains("--help")) {
-			abort(usage());
+		if (args.length == 0) { // -h / --help is handled by ArgsHelper.parse
+			ArgsHelper.displayUsage(ConvTab2Xdxf::usage, System.err);
+			System.exit(1);
 		}
 
 		var cli = parseArgs(args);
@@ -75,8 +75,8 @@ public class ConvTab2Xdxf {
 
 		String input = argsHlp.require(cli, "in", "--in/-i");
 		String output = argsHlp.require(cli, "out", "--out/-o");
-		String lang = argsHlp.require(cli, "lang", "--lang/-l");
-		String langTo = argsHlp.resolve(cli, "lang-to", lang);
+		String lang = argsHlp.requireLang(cli, "lang", "--lang/-l");
+		String langTo = argsHlp.resolveLang(cli, "lang-to", "--lang-to/-t", lang);
 		String name = argsHlp.require(cli, "name", "--name/-n");
 		String desc = argsHlp.resolve(cli, "desc", name);
 		Boolean validate = argsHlp.resolveBool(cli, "validate", true);
@@ -85,12 +85,6 @@ public class ConvTab2Xdxf {
 		boolean toStdout = "-".equals(output);
 
 		Path outFile = toStdout ? null : Path.of(output);
-		if (!LangHelper.validIso2(lang)) {
-			abort("Invalid ISO2 language: %s", lang);
-		}
-		if (!LangHelper.validIso2(langTo)) {
-			abort("Invalid ISO2 language: %s", langTo);
-		}
 		String lang3 = LangHelper.langIso2toIso3(lang);
 		String langTo3 = LangHelper.langIso2toIso3(langTo);
 
@@ -179,7 +173,7 @@ public class ConvTab2Xdxf {
 	}
 
 	static String usage() {
-		return """
+		return TOOL + ": " + """
 				Convert a TSV dictionary (word<TAB>definition) to XDXF.
 				Blank lines and lines starting with # are ignored.
 
@@ -199,6 +193,7 @@ public class ConvTab2Xdxf {
 				                   with -o - it is validated in a temp file before streaming
 				  -c / --config    .properties config file (namespace: tab2xdxf.*);
 				                   command-line options override it
+				  -h / --help      Show this help
 
 				Examples:
 				  linux/tab-2-xdxf -i data/out/kaikki-pt.tsv -o data/out/kaikki-pt.xdxf -l pt -n "Dicionário PT"

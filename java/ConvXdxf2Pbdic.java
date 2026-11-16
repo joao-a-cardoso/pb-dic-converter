@@ -61,8 +61,9 @@ public class ConvXdxf2Pbdic {
 
 	// ── main ──────────────────────────────────────────────────────────────────
 	public static void main(String[] args) throws Exception {
-		if (args.length == 0 || Arrays.asList(args).contains("--help")) {
-			abort(usage());
+		if (args.length == 0) { // -h / --help is handled by ArgsHelper.parse
+			ArgsHelper.displayUsage(ConvXdxf2Pbdic::usage, System.err);
+			System.exit(1);
 		}
 
 		var cli = parseArgs(args);
@@ -73,7 +74,7 @@ public class ConvXdxf2Pbdic {
 
 		String inPath = argsHlp.require(cli, "in", "--in/-i");
 		String outPath = argsHlp.require(cli, "out", "--out/-o");
-		String lang = argsHlp.require(cli, "lang", "--lang/-l");
+		String lang = argsHlp.requireLang(cli, "lang", "--lang/-l");
 		String langDir = argsHlp.resolve(cli, "langdir", "lang/" + lang);
 		String name = argsHlp.resolve(cli, "name", null);
 
@@ -633,7 +634,7 @@ public class ConvXdxf2Pbdic {
 	}
 
 	static String usage() {
-		return """
+		return TOOL + ": " + """
 				Convert an XDXF dictionary to PocketBook .dic (SDIC) format.
 
 				Usage:
@@ -655,6 +656,7 @@ public class ConvXdxf2Pbdic {
 				                     else the output path without extension)
 				  -c / --config      .properties config file (namespace: xdxf2pcdic.*);
 				                     command-line options override it
+				  -h / --help        Show this help
 
 				Examples:
 				  linux/xdxf-2-pbdic -i data/out/kaikki-pt.xdxf -o data/out/kaikki-pt.dic -l pt -m ALWAYS

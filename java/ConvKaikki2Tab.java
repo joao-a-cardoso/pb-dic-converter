@@ -13,7 +13,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -32,7 +31,6 @@ import java.util.zip.GZIPInputStream;
 
 import shared.ArgsHelper;
 import shared.JsonParser;
-import shared.LangHelper;
 
 /**
  * kaikki-2-tab — convert a Kaikki (Wiktionary) JSONL dump to TSV
@@ -82,8 +80,9 @@ public class ConvKaikki2Tab {
 
 	// ── main ──────────────────────────────────────────────────────────────────
 	public static void main(String[] args) throws Exception {
-		if (args.length == 0 || Arrays.asList(args).contains("--help")) {
-			abort(usage());
+		if (args.length == 0) { // -h / --help is handled by ArgsHelper.parse
+			ArgsHelper.displayUsage(ConvKaikki2Tab::usage, System.err);
+			System.exit(1);
 		}
 
 		var cli = parseArgs(args);
@@ -97,11 +96,7 @@ public class ConvKaikki2Tab {
 
 		String input = argsHlp.require(cli, "in", "--in/-i");
 		String output = argsHlp.require(cli, "out", "--out/-o");
-		String lang = argsHlp.require(cli, "lang", "--lang/-l");
-
-		if (!LangHelper.validIso2(lang)) {
-			abort("Invalid ISO2 language: %s", lang);
-		}
+		String lang = argsHlp.requireLang(cli, "lang", "--lang/-l");
 
 		String ewArg = argsHlp.resolveUC(cli, "embedded-defs", "BOTH");
 		if (!ewArg.equals("KEEP") && !ewArg.equals("SEPARATE") && !ewArg.equals("BOTH")) {
@@ -799,7 +794,7 @@ public class ConvKaikki2Tab {
 	}
 
 	static String usage() {
-		return """
+		return TOOL + ": " + """
 				Convert a Kaikki (Wiktionary) JSONL dump to TSV (word<TAB>definition).
 
 				Usage:
@@ -818,6 +813,7 @@ public class ConvKaikki2Tab {
 				                          BOTH     — both embedded and standalone
 				  -c / --config         .properties config file (namespace: kaikki2tab.*);
 				                        command-line options override it
+				  -h / --help           Show this help
 
 				Examples:
 				  linux/kaikki-2-tab -i data/kaikki/kaikki.org-all-to-Portuguese.jsonl.gz -o data/out/kaikki-pt.tsv -l pt

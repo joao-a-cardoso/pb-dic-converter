@@ -70,6 +70,31 @@ Each conversion has its own config file in `confs/`. All tools read it via `-c` 
 
 > Note: the `xdxf-2-pbdic` namespace is spelled `xdxf2pcdic` in the code.
 
+Key style — a config uses **either** prefixed keys **or** bare keys, never both:
+
+- **Prefixed** (`tab2xdxf.in=`, `kaikki2tab.lang=`): for configs shared by several tools, as in `confs/`. Each tool reads only its own namespace and ignores the others. A key in its own namespace that it does not know (e.g. a typo such as `tab2xdxf.no-validate`) gives `Warning: unknown config key …, ignoring.`
+- **Bare** (`in=`, `out=`, `lang=`): for a config used by a single tool; the keys apply to whichever tool reads the file.
+- **Mixed**: rejected — every tool stops with `Error: config <file> mixes prefixed and bare keys; add a prefix to: …` (exit code 1), because a bare key in a shared config would be taken by every tool.
+
+Variables and comments:
+
+```properties
+# a line starting with # is a comment
+def lang=pt                                  # headword language
+def lang_to=pt                               # definition language
+def title=Wiktionary.org ${lang}-${lang_to}  # a variable may use other variables
+
+kaikki2tab.lang=$lang
+tab2xdxf.lang=$lang
+tab2xdxf.lang-to=$lang_to
+tab2xdxf.name=$title (Kaikki)                # → Wiktionary.org pt-pt (Kaikki)
+```
+
+- `def <name>=<value>` defines a variable (name: letters, digits, `_`); use it in any value as `$name`, or `${name}` when letters or digits follow. `$$` is a literal `$`.
+- Variables are substituted in config values only — not in keys or command-line arguments. `def` lines are not keys, so they don't count for the prefixed/bare rule.
+- A `#` preceded by a space or tab starts a comment, up to the end of the line. A `#` without whitespace before it is kept (`C#`); write `\#` for a literal `#` after a space.
+- Errors (exit code 1): an undefined variable (`undefined variable '$lnag' in 'tab2xdxf.lang'`), a variable defined twice, a definition loop (`variable loop: a -> b -> a`) or a malformed `def` line.
+
 Example config (`confs/kaikki2xdxf-pt-pt.config`):
 
 ```properties
@@ -105,7 +130,7 @@ Available configs:
 | `xdxf-2-stardict` | XDXF | StarDict directory (`stardict.ifo/.idx/.dict[.dz]`) | `-i`, `-o <dir>`, `-m ALWAYS\|EXACT\|NEVER`, `-z true\|false` (compress), `-n <name>` |
 | `check-pbdic`     | `.dic` + `.xdxf` | Validation report (exit 1 on failure) | `-x`, `-d`, `-l`, `-D <langdir>` (default `lang/<lang>`), `-s <samples>` (default 20) |
 
-Every tool accepts `-c <config>` and `--help`. Progress messages go to stderr, so stdout is safe for piping.
+Every tool accepts `-c <config>` and `-h` / `--help`. Language codes (`-l`, `-t`) are two-letter ISO 639-1 codes, in any case (`pt`, `PT`). Progress messages go to stderr, so stdout is safe for piping.
 
 `--merge-defs` (duplicate headwords):
 

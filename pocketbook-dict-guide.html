@@ -700,8 +700,8 @@ confs/
 <span class="comment"># Step 3 — XDXF → .dic</span>
 <span class="cmd">linux/xdxf-2-pbdic</span> <span class="flag">-i</span> <span class="arg">data/out/dict-pt-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/dict-pt-pt.dic</span> <span class="flag">-l</span> <span class="arg">pt</span> <span class="flag">-m</span> <span class="arg">EXACT</span></pre>
           <div class="note">
-            <strong>Language codes:</strong> two-letter ISO 639-1 codes in lower case (<code>pt</code>, <code>en</code>, …).<br>
-            <strong>Options:</strong> run any tool with <code>--help</code> for its full list of options and defaults.<br>
+            <strong>Language codes:</strong> two-letter ISO 639-1 codes (<code>pt</code>, <code>en</code>, …), in any case.<br>
+            <strong>Options:</strong> run any tool with <code>-h</code> / <code>--help</code> for its full list of options and defaults.<br>
             <strong>JDK required:</strong> <code>runjava</code> compiles the sources on the fly; a full JDK is needed, not just the JRE.
           </div>
         </div>
@@ -731,7 +731,18 @@ confs/
 
         <div id="tab-conv-config" class="tab-panel">
           <p class="step-desc">Each conversion has its own config file. All tools read it via <code>-c</code> and use their own namespace — CLI arguments always override config values.</p>
-          <p class="step-desc">Property keys are prefixed with the tool name, dashes removed. Setting <code>out=-</code> or <code>in=-</code> enables piping directly from the config.</p>
+          <p class="step-desc">Property keys are prefixed with the tool name, dashes removed. Setting <code>out=-</code> or <code>in=-</code> (e.g. <code>kaikki2tab.out=-</code>, <code>tab2xdxf.in=-</code>) enables piping directly from the config.</p>
+          <p class="step-desc"><strong>Prefixed or bare, never both:</strong> a shared config uses only prefixed keys (<code>tab2xdxf.in=</code>) — each tool reads its own namespace and warns about unknown keys in it (e.g. a typo such as <code>tab2xdxf.no-validate</code>). A config for a single tool may use bare keys (<code>in=</code>, <code>lang=</code>). A config that mixes both is rejected with an error listing the keys to prefix, since a bare key in a shared config would be taken by every tool.</p>
+          <p class="step-desc"><strong>Variables and comments:</strong> <code>def lang=pt</code> defines a variable, used in any value as <code>$lang</code> or <code>${lang}</code> (<code>$$</code> is a literal <code>$</code>); variables may use other variables. A <code>#</code> preceded by a space or tab starts a comment up to the end of the line (<code>C#</code> is kept; <code>\#</code> is a literal <code>#</code>). An undefined variable, a variable defined twice or a definition loop is an error.</p>
+          <pre><span class="comment"># Kaikki PT→PT with variables</span>
+def lang=pt                                  <span class="comment"># headword language</span>
+def lang_to=pt                               <span class="comment"># definition language</span>
+def title=Wiktionary.org ${lang}-${lang_to}
+
+kaikki2tab.lang=$lang
+tab2xdxf.lang=$lang
+tab2xdxf.lang-to=$lang_to
+tab2xdxf.name=$title (Kaikki)                <span class="comment"># → Wiktionary.org pt-pt (Kaikki)</span></pre>
 
           <pre><span class="comment"># confs/kaikki2xdxf-pt-pt.config — Kaikki PT→PT, piped to file</span>
 
