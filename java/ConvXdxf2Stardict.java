@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.stream.Collectors;
@@ -23,7 +24,7 @@ import shared.IoHelper;
 import shared.CliException;
 import shared.ToolLog;
 import shared.ToolRunner;
-import shared.DictzipUtil;
+import shared.DictzipHelper;
 import shared.XdxfHelper.ParsedEntry;
 import shared.XdxfHelper.XdxfHeader;
 
@@ -158,14 +159,10 @@ public class ConvXdxf2Stardict {
 		entries = merged;
 
 		// 4. Write StarDict files
+		checkDictSize(entries, compress); // before touching any file
 		LOG.err("Writing...");
 		Path outPath = Path.of(outDir);
 		Files.createDirectories(outPath);
-		// remove only the files of a previous StarDict build in this folder (never
-		// anything else: the folder may hold other files)
-		for (String ext : STARDICT_EXTENSIONS) {
-			Files.deleteIfExists(outPath.resolve("stardict" + ext));
-		}
 		writeStardict(compress, entries, outPath, name, description);
 
 		String extensions = STARDICT_EXTENSIONS.stream()
@@ -184,6 +181,27 @@ public class ConvXdxf2Stardict {
 
 	// ── StarDict writer ───────────────────────────────────────────────────────
 
+	/** Largest .dict: the .idx holds offsets as unsigned 32-bit numbers. */
+	static final long MAX_DICT_SIZE = 0xFFFF_FFFFL;
+
+	/**
+	 * Fails with a clear message when the definitions do not fit in one StarDict
+	 * dictionary: 4 GB for .dict, about 1.9 GB for .dict.dz (dictzip limit).
+	 */
+	static void checkDictSize(List<ParsedEntry> entries, boolean compress) {
+		long total = 0;
+		for (ParsedEntry e : entries) {
+			total += e.definition().length;
+		}
+		long max = compress ? DictzipHelper.MAX_SIZE : MAX_DICT_SIZE;
+		if (total > max) {
+			throw CliException.error(String.format(Locale.ROOT,
+					"Error: the definitions take %,d bytes, more than %s allows (%,d bytes). Split the dictionary%s.",
+					total, compress ? "a compressed .dict.dz" : "a StarDict .dict", max,
+					compress ? ", or use --compress false (up to 4 GB)" : ""));
+		}
+	}
+
 	static void writeStardict(boolean compress, List<ParsedEntry> entries, Path outPath, String name,
 			String description) throws IOException {
 
@@ -198,18 +216,21 @@ public class ConvXdxf2Stardict {
 		File dictFile = new File(parentFile, filename + ".dict" + (compress ? ".dz" : ""));
 		File ifoFile = new File(parentFile, filename + ".ifo");
 
-		// Write .idx and .dict while going through the entries, straight to the
-		// files: the dictionary is not copied into memory again (compressed, only
-		// the compressed chunks are kept until the end, see DictzipUtil)
+		// Build .idx and .dict while going through the entries, in memory and
+		// compressed (SafeOutput; a .dict.dz is held as its compressed chunks, see
+		// DictzipHelper): the files of a previous build are only replaced once the
+		// new ones are complete
 
 		long idxSize = 0;
 		if (compress) {
 			LOG.err("... compressing dict file");
 		}
-		try (var idxOut = new BufferedOutputStream(Files.newOutputStream(idxFile.toPath()));
-				var dictOut = new BufferedOutputStream(Files.newOutputStream(dictFile.toPath()));
-				var dz = compress ? new DictzipUtil.Compressor() : null) {
-			int offset = 0;
+		try (var idx = IoHelper.openSafeOutput(idxFile.toPath());
+				var dict = compress ? null : IoHelper.openSafeOutput(dictFile.toPath());
+				var dz = compress ? DictzipHelper.openCompressor() : null) {
+			OutputStream idxOut = idx.stream();
+			OutputStream dictOut = dict == null ? null : dict.stream();
+			long offset = 0; // up to MAX_DICT_SIZE (checkDictSize), written as unsigned 32 bits
 			for (ParsedEntry e : entries) {
 				byte[] wordBytes = e.word().getBytes(StandardCharsets.UTF_8);
 				int size = e.definition().length;
@@ -217,7 +238,7 @@ public class ConvXdxf2Stardict {
 				// .idx: word\0 + 4-byte big-endian offset + 4-byte big-endian size
 				idxOut.write(wordBytes);
 				idxOut.write(0);
-				writeU32BE(idxOut, offset);
+				writeU32BE(idxOut, (int) offset);
 				writeU32BE(idxOut, size);
 				idxSize += wordBytes.length + 9;
 
@@ -229,22 +250,33 @@ public class ConvXdxf2Stardict {
 				}
 				offset += size;
 			}
-			if (dz != null) {
-				dz.finishTo(dictOut);
+
+			// .ifo (needs the size of the .idx)
+			var ifo = new StringBuilder();
+			ifo.append("StarDict's dict ifo file\n");
+			ifo.append("version=" + version + "\n");
+			ifo.append("wordcount=").append(entries.size()).append("\n");
+			ifo.append("idxfilesize=").append(idxSize).append("\n");
+			ifo.append("bookname=").append(name).append("\n");
+			ifo.append("description=").append(description).append("\n");
+			ifo.append("sametypesequence=h\n");
+
+			// Everything is built: only now replace the previous build. Remove only the
+			// files of a StarDict build (never anything else: the folder may hold other
+			// files). The .ifo, which readers look for, is written last.
+			for (String ext : STARDICT_EXTENSIONS) {
+				Files.deleteIfExists(outPath.resolve(filename + ext));
 			}
+			if (dz != null) {
+				try (var dictFileOut = new BufferedOutputStream(Files.newOutputStream(dictFile.toPath()))) {
+					dz.finishTo(dictFileOut);
+				}
+			} else {
+				dict.commit();
+			}
+			idx.commit();
+			Files.writeString(ifoFile.toPath(), ifo, StandardCharsets.UTF_8);
 		}
-
-		// Write .ifo (needs the size of the .idx)
-
-		var ifo = new StringBuilder();
-		ifo.append("StarDict's dict ifo file\n");
-		ifo.append("version=" + version + "\n");
-		ifo.append("wordcount=").append(entries.size()).append("\n");
-		ifo.append("idxfilesize=").append(idxSize).append("\n");
-		ifo.append("bookname=").append(name).append("\n");
-		ifo.append("description=").append(description).append("\n");
-		ifo.append("sametypesequence=h\n");
-		Files.writeString(ifoFile.toPath(), ifo, StandardCharsets.UTF_8);
 	}
 
 	// ── Helpers ───────────────────────────────────────────────────────────────

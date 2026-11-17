@@ -30,9 +30,9 @@ import java.util.zip.Deflater;
  *
  * Reference: RFC 1952 (gzip) + dictzip source (dict-1.x).
  */
-public final class DictzipUtil {
+public final class DictzipHelper {
 
-	private DictzipUtil() {
+	private DictzipHelper() {
 		// static members only: not instantiable (Effective Java, Item 4)
 	}
 
@@ -40,14 +40,29 @@ public final class DictzipUtil {
   private static final int CHUNK_SIZE = 58315;
 
   /**
+   * Most chunks a dictzip file can have: the gzip extra field holding the
+   * chunk sizes is limited to 65535 bytes (XLEN), 10 of them fixed, 2 per
+   * chunk. The reference dictzip has the same limit.
+   */
+  private static final int MAX_CHUNKS = (0xFFFF - 10) / 2;
+
+  /** Largest input a dictzip file can hold: 32762 chunks, about 1.9 GB. */
+  public static final long MAX_SIZE = (long) MAX_CHUNKS * CHUNK_SIZE;
+
+  /**
    * Compress {@code input} in dictzip format and write to {@code out}.
    * {@code out} is flushed but not closed.
    */
   public static void write(byte[] input, OutputStream out) throws IOException {
-    try (var compressor = new Compressor()) {
+    try (var compressor = openCompressor()) {
       compressor.write(input, 0, input.length);
       compressor.finishTo(out);
     }
+  }
+
+  /** A new {@link Compressor}; close it when done (try-with-resources). */
+  public static Compressor openCompressor() {
+    return new Compressor();
   }
 
   /**
@@ -56,7 +71,7 @@ public final class DictzipUtil {
    * use with try-with-resources.
    *
    * <pre>
-   * try (var dz = new DictzipUtil.Compressor()) {
+   * try (var dz = DictzipHelper.openCompressor()) {
    *   for (byte[] part : parts) dz.write(part);
    *   dz.finishTo(out);
    * }
@@ -75,6 +90,10 @@ public final class DictzipUtil {
     private final ByteArrayOutputStream chunkBuf = new ByteArrayOutputStream(CHUNK_SIZE);
     private boolean finished;
 
+    /** Only through {@link DictzipHelper#openCompressor()}. */
+    private Compressor() {
+    }
+
     /** Number of uncompressed bytes written so far. */
     public long size() {
       return size;
@@ -87,6 +106,9 @@ public final class DictzipUtil {
     public void write(byte[] b, int off, int len) throws IOException {
       if (finished)
         throw new IllegalStateException("dictzip data already written");
+      if (size + len > MAX_SIZE)
+        throw new IOException("Too much data for dictzip: more than " + MAX_SIZE
+            + " bytes (" + MAX_CHUNKS + " chunks of " + CHUNK_SIZE + ")");
       crc.update(b, off, len);
       size += len;
       while (len > 0) {

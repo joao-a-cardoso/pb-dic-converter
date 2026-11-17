@@ -5,16 +5,16 @@ import static shared.XmlHelper.cleanHtml;
 import static shared.XmlHelper.encodeEntities;
 
 import java.io.BufferedWriter;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
-import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -110,36 +110,61 @@ public final class XdxfHelper {
 	// -- XDXF Processing Methods --
 
 	/**
-	 * Writes the XDXF to {@code stream} and flushes it; the caller opened the
-	 * stream and closes it.
+	 * A new {@link XdxfWriter} on {@code stream}; writes the XDXF header at once.
+	 * The caller opened the stream and closes it.
 	 */
-	public static void writeXdxf(XdxfHeader header, List<XdxfEntry> entries, OutputStream stream,
-			Consumer<String> logger) throws Exception {
-		header = header.withFormat("visual"); // Constant, for now
+	public static XdxfWriter openXdxfWriter(XdxfHeader header, OutputStream stream, Consumer<String> logger)
+			throws IOException {
+		return new XdxfWriter(header, stream, logger);
+	}
 
-		var writer = new BufferedWriter(new OutputStreamWriter(stream, StandardCharsets.UTF_8));
-		writer.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
-		writer.write("<xdxf lang_from=\"" + header.lang() + "\" lang_to=\"" + header.langTo() + "\" format=\""
-				+ header.format() + "\">\n");
-		writer.write("<full_name>" + encodeEntities(false, header.name()) + "</full_name>\n");
-		writer.write("<description>" + encodeEntities(false, header.description()) + "</description>\n");
+	/**
+	 * Writes an XDXF entry by entry, so the entries need not be kept in memory:
+	 * {@link XdxfHelper#openXdxfWriter} writes the header, {@link #add} one
+	 * entry (cleaned with {@code XmlHelper.cleanHtml}), {@link #end} the closing
+	 * tag. The caller opened the stream and closes it.
+	 */
+	public static final class XdxfWriter {
+		private final BufferedWriter writer;
+		private final Consumer<String> logger;
+		private int count;
 
-		for (XdxfEntry entry : entries) {
+		/** Only through {@link XdxfHelper#openXdxfWriter}. */
+		private XdxfWriter(XdxfHeader header, OutputStream stream, Consumer<String> logger) throws IOException {
+			this.logger = Objects.requireNonNull(logger, "logger");
+			header = header.withFormat("visual"); // Constant, for now
+			writer = new BufferedWriter(new OutputStreamWriter(stream, StandardCharsets.UTF_8));
+			writer.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+			writer.write("<xdxf lang_from=\"" + header.lang() + "\" lang_to=\"" + header.langTo() + "\" format=\""
+					+ header.format() + "\">\n");
+			writer.write("<full_name>" + encodeEntities(false, header.name()) + "</full_name>\n");
+			writer.write("<description>" + encodeEntities(false, header.description()) + "</description>\n");
+		}
+
+		public void add(XdxfEntry entry) throws IOException {
 			String def = cleanHtml(entry.definition());
 			def = def.replace("\n", " ");
 			def = autoCloseTags(def);
 
 			writer.write("<ar><k>" + encodeEntities(false, entry.word()) + "</k>" + def + "</ar>\n");
+			count++;
 		}
-		writer.write("</xdxf>\n");
-		writer.flush(); // flush, don't close: the stream belongs to the caller
-		logger.accept(String.format("%d entries written to %s.", entries.size(), "output"));
 
+		/** Writes the closing tag and flushes (doesn't close: the stream belongs to the caller). */
+		public void end() throws IOException {
+			writer.write("</xdxf>\n");
+			writer.flush();
+			logger.accept(String.format("%d entries written to %s.", count, "output"));
+		}
 	}
 
-	/** Validate Xdxf content */
-	public static boolean validateXdxf(Path outFile, boolean deleteFileExitOnError, Consumer<String> logger)
-			throws Exception {
+	/**
+	 * Checks that {@code xml} is well-formed XML; logs "XML validation: OK" or
+	 * where it failed. The caller opened the stream and closes it.
+	 *
+	 * @return whether it is valid
+	 */
+	public static boolean validateXdxf(InputStream xml, Consumer<String> logger) {
 
 		boolean success;
 		try {
@@ -160,7 +185,7 @@ public final class XdxfHelper {
 			saxParser.setProperty("http://www.oracle.com/xml/jaxp/properties/maxGeneralEntitySizeLimit", 100_000_000);
 			saxParser.setProperty("http://www.oracle.com/xml/jaxp/properties/totalEntitySizeLimit", 100_000_000);
 
-			saxParser.parse(outFile.toFile(), handler);
+			saxParser.parse(xml, handler);
 			logger.accept("XML validation: OK");
 			success = true;
 		} catch (org.xml.sax.SAXParseException e) {
@@ -171,17 +196,6 @@ public final class XdxfHelper {
 			success = false;
 			logger.accept(String.format("XML validation FAILED: %s", e.getMessage()));
 		}
-
-		if (!success && deleteFileExitOnError) {
-			try {
-				java.nio.file.Files.deleteIfExists(outFile);
-			} catch (Exception ignored) {
-				logger.accept("Output file delete failed: " + ignored.getMessage());
-			}
-			logger.accept("Output file deleted.");
-			throw new CliException(null, 1, false); // messages already logged
-		}
-
 		return success;
 	}
 

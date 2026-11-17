@@ -156,6 +156,8 @@ Available configs:
 
 Every tool accepts `-c <config>`, `--def <name>=<value>` and `-h` / `--help`. Language codes (`-l`, `-t`) are two-letter ISO 639-1 codes, in any case (`pt`, `PT`). Progress messages go to stderr, so stdout is safe for piping.
 
+Outputs are all or nothing (`kaikki-2-tab`, `tab-2-xdxf`, `xdxf-2-stardict`): the output file, the StarDict files or stdout are written only at the end, once everything succeeded (validation included). Until then the output is kept in memory, compressed. On an error an existing output is left as it was, and a pipe receives nothing, so the next tool fails visibly instead of converting a cut-off input. A wrong output path (missing folder, read-only file) is reported at the start, before the work.
+
 `kaikki-2-tab` label translations: labels such as *Etymology*, *feminine* or the English domain topics (*Botany*, *Medicine*) are translated with a `.properties` file (`english-term=translation`, case-insensitive). By default it is `java/term-translations_<lang>.properties`, from `-l`; `--terms-file <file>` (config: `kaikki2tab.terms-file`) uses another one. The file used is logged; a missing default file only means the labels stay in English. Dictionaries whose definitions are in another language than the headwords (EN → PT) should point to the definitions' language — `confs/kaikki2xdxf-en-pt.config` uses `java/term-translations_${lang_to}.properties`.
 
 `--merge-defs` (duplicate headwords):
@@ -181,7 +183,10 @@ linux/          stardict-2-tab  kaikki-2-tab  tab-2-xdxf  xdxf-2-pbdic  xdxf-2-s
 java/           ConvStardict2Tab.java  ConvKaikki2Tab.java  ConvTab2Xdxf.java
                 ConvXdxf2Pbdic.java    ConvXdxf2Stardict.java  CheckPbdic.java
                 term-translations_pt.properties   (kaikki-2-tab label translations)
-  shared/       ArgsHelper  Constants  DictzipUtil  JsonParser  LangHelper  XdxfHelper  XmlHelper
+  shared/       ToolRunner  CliException  ToolLog  ArgsHelper   (run, errors, messages, options/config)
+                IoHelper     (inputs/outputs: "-", .gz; all-or-nothing SafeOutput)
+                XdxfHelper  XmlHelper  DictzipHelper  JsonParser  JsonException
+                LangHelper  TermTranslator  TextHelper  Constants
 confs/          kaikki2xdxf-en-pt.config  kaikki2xdxf-pt-pt.config  stardict2xdxf-pt-pt.config
                 kaikki2stardict-en-pt.config  kaikki2stardict-pt-pt.config
 data/

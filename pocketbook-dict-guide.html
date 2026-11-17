@@ -795,7 +795,7 @@ tab2xdxf.name=Wiktionário PT-&gt;PT (ReaderDict)</pre>
           <div class="note">
             <strong>Chain scripts</strong> run several tools from one config: <code>chain-kaikki-2-xdxf</code> and <code>chain-stardict-2-xdxf</code> stop at <code>.xdxf</code> (run <code>xdxf-2-pbdic</code>, step 5, afterwards); <code>chain-kaikki-2-stardict</code> goes on to StarDict and needs the <code>xdxf2stardict.*</code> keys (<code>confs/kaikki2stardict-*.config</code>). They stop at the first failing step and never overwrite an existing <code>.xdxf</code> with an empty one; <code>--def</code> after the config is passed to every step.<br>
             <strong>Namespaces:</strong> <code>stardict-2-tab</code> → <code>stardict2tab.*</code>, <code>kaikki-2-tab</code> → <code>kaikki2tab.*</code>, <code>tab-2-xdxf</code> → <code>tab2xdxf.*</code>, <code>xdxf-2-pbdic</code> → <code>xdxf2pbdic.*</code>, <code>check-pbdic</code> → <code>checkpbdic.*</code>.<br>
-            <strong>Piping:</strong> all progress messages go to stderr, so only data flows through the pipe. XML validation runs automatically even in pipeline mode (via a temporary file) — no flags needed.
+            <strong>Piping:</strong> all progress messages go to stderr, so only data flows through the pipe. XML validation runs automatically, also in pipeline mode — no flags needed. Outputs are all or nothing: a tool writes its output (file or stdout) only at the end, once everything succeeded; on an error an existing output is left as it was and the pipe receives nothing, so the next tool fails visibly instead of converting a cut-off input.
           </div>
         </div>
 

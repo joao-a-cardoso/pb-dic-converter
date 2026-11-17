@@ -6,11 +6,13 @@ import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.OutputStream;
 import java.io.OutputStreamWriter;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -111,16 +113,18 @@ public class ConvKaikki2Tab {
 
 		int count = 0, filtered = 0, skipped = 0, duplicates = 0;
 		List<String> lstFilteredLang = new ArrayList<>();
-		// Key = "word\tdef" — only drop entries where both headword AND content are
+		// Lines "word\tdef" — only drop entries where both headword AND content are
 		// identical
-		var seenEntries = new HashSet<String>();
+		var seenEntries = new SeenLines();
 		var seenWords = new HashSet<String>();
 		var affectedWords = new HashSet<String>();
 		// .gz input is decompressed by IoHelper; "-" output is stdout
+		// the output (file or stdout) is written only at the end, when everything
+		// succeeded: on an error an old file is kept, a pipe gets nothing
 		try (InputStream inStream = IoHelper.openInput(input);
-				OutputStream outStream = IoHelper.openOutput(output);
+				var out = IoHelper.openSafeOutput(output);
 				var reader = new BufferedReader(new InputStreamReader(inStream, StandardCharsets.UTF_8));
-				var writer = new BufferedWriter(new OutputStreamWriter(outStream, StandardCharsets.UTF_8))) {
+				var writer = new BufferedWriter(new OutputStreamWriter(out.stream(), StandardCharsets.UTF_8))) {
 
 			Map<String, CharSequence> mapExprsToEmitSeparate = null;
 
@@ -200,6 +204,8 @@ public class ConvKaikki2Tab {
 					}
 				}
 			}
+			writer.flush();
+			out.commit();
 		} // main try
 
 		LOG.err(String.format(
@@ -794,6 +800,34 @@ public class ConvKaikki2Tab {
 
 	static boolean listIsEmpty(Collection<?> coll) {
 		return coll == null || coll.isEmpty();
+	}
+
+	/**
+	 * The set of lines written so far, for dropping exact duplicates, without
+	 * keeping the lines themselves: only a 128-bit hash of each (SHA-256,
+	 * truncated). Two different lines getting the same hash is practically
+	 * impossible (about 10^-27 for a million lines).
+	 */
+	static final class SeenLines {
+		private record Hash(long high, long low) {
+		}
+
+		private final Set<Hash> seen = new HashSet<>();
+		private final MessageDigest sha256;
+
+		SeenLines() {
+			try {
+				sha256 = MessageDigest.getInstance("SHA-256");
+			} catch (NoSuchAlgorithmException e) {
+				throw new IllegalStateException("SHA-256 is required in every Java platform", e);
+			}
+		}
+
+		/** Adds the line; {@code true} if it was not seen before (like {@link Set#add}). */
+		boolean add(String line) {
+			var digest = ByteBuffer.wrap(sha256.digest(line.getBytes(StandardCharsets.UTF_8)));
+			return seen.add(new Hash(digest.getLong(), digest.getLong()));
+		}
 	}
 
 	// --- Argument parser ---

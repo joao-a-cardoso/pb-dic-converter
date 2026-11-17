@@ -2,11 +2,10 @@
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.OutputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -34,8 +33,14 @@ import shared.XdxfHelper.XdxfHeader;
  * such as {@code br} are self-closed); other tags are dropped, keeping their
  * text; unbalanced tags are fixed; {@code &} and {@code <} that are not XML are
  * escaped; common HTML entities become characters.
- * The output is validated with Java's SAX parser; on failure the output is
- * deleted and the tool exits with code 1.
+ * The output is validated with Java's SAX parser.
+ *
+ * <p>
+ * The output (file or stdout) is written only at the end, when everything
+ * succeeded, validation included ({@code shared.IoHelper.SafeOutput}): on
+ * any error an existing output file keeps its old contents and stdout gets
+ * nothing; the tool exits with code 1. Until then the XDXF is kept
+ * compressed in memory.
  */
 public class ConvTab2Xdxf {
 
@@ -69,9 +74,7 @@ public class ConvTab2Xdxf {
 		boolean validate = argsHlp.resolveBool(cli, "validate", true);
 
 		boolean fromStdin = "-".equals(input);
-		boolean toStdout = "-".equals(output);
 
-		Path outFile = toStdout ? null : Path.of(output);
 		String lang3 = LangHelper.langIso2toIso3(lang);
 		String langTo3 = LangHelper.langIso2toIso3(langTo);
 
@@ -82,45 +85,32 @@ public class ConvTab2Xdxf {
 		argsHlp.listProperties(cli);
 
 		var header = new XdxfHeader(name, desc, lang3, langTo3, null);
-		List<XdxfEntry> entries;
-		try (InputStream in = IoHelper.openInput(input)) {
-			entries = readTabfile(in);
+		// each line is written as it is read (no list of entries in memory), into a
+		// SafeOutput: the output file / stdout is only written when everything
+		// succeeded, validation included
+		try (InputStream in = IoHelper.openInput(input); var out = IoHelper.openSafeOutput(output)) {
+			var xdxf = XdxfHelper.openXdxfWriter(header, out.stream(), er -> LOG.err(er));
+			readTabfile(in, xdxf);
+			xdxf.end();
+			if (validate) {
+				try (InputStream written = out.contents()) {
+					if (!XdxfHelper.validateXdxf(written, er -> LOG.err(er))) {
+						throw CliException.error("Output not written.");
+					}
+				}
+			}
+			out.commit();
 		}
-		if (toStdout && validate) {
-			// Write to temp file, validate, then stream to stdout
-			Path tmp = Files.createTempFile("tab2xdxf-", ".xdxf");
-			try {
-				try (var out = Files.newOutputStream(tmp)) {
-					XdxfHelper.writeXdxf(header, entries, out, er -> LOG.err(er));
-				}
-				// exits on failure, deletes tmp
-				XdxfHelper.validateXdxf(tmp, true, er -> LOG.err(er));
-				try (var in = Files.newInputStream(tmp)) {
-					in.transferTo(System.out);
-				}
-				System.out.flush();
-			} finally {
-				Files.deleteIfExists(tmp);
-			}
-		} else if (toStdout) {
-			try (OutputStream out = IoHelper.openOutput(output)) {
-				XdxfHelper.writeXdxf(header, entries, out, er -> LOG.err(er));
-			}
-		} else
-			try (var out = Files.newOutputStream(outFile)) {
-				XdxfHelper.writeXdxf(header, entries, out, er -> LOG.err(er));
-				if (validate) {
-					// exits on failure, deletes tmp
-					XdxfHelper.validateXdxf(outFile, true, er -> LOG.err(er));
-				}
-			}
 	}
 
 	// --- Tabfile reader ---
 
-	/** Reads the TSV from {@code stream}; the caller opened it and closes it. */
-	static List<XdxfEntry> readTabfile(InputStream stream) throws Exception {
-		var entries = new ArrayList<XdxfEntry>();
+	/**
+	 * Reads the TSV from {@code stream} into {@code xdxf}, entry by entry; the
+	 * caller opened the stream and closes it.
+	 */
+	static void readTabfile(InputStream stream, XdxfHelper.XdxfWriter xdxf) throws IOException {
+		int count = 0;
 		var reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8));
 		String line;
 		int lineNum = 0;
@@ -133,10 +123,10 @@ public class ConvTab2Xdxf {
 				LOG.err(String.format("Warning: line %d has no tab, skipping.", lineNum));
 				continue;
 			}
-			entries.add(new XdxfEntry(line.substring(0, tab).strip(), line.substring(tab + 1)));
+			xdxf.add(new XdxfEntry(line.substring(0, tab).strip(), line.substring(tab + 1)));
+			count++;
 		}
-		LOG.err(String.format("read %d entries.", entries.size()));
-		return entries;
+		LOG.err(String.format("read %d entries.", count));
 	}
 
 	// --- Helpers ---
@@ -183,7 +173,7 @@ public class ConvTab2Xdxf {
 				  -t / --lang-to   Language of the definitions, ISO 639-1 code (default: --lang)
 				       --desc      Dictionary description (default: --name)
 				  -v / --validate  true|false — validate the XML output (default: true);
-				                   with -o - it is validated in a temp file before streaming
+				                   the output is written only if it is valid
 				  -c / --config    .properties config file (namespace: tab2xdxf.*);
 				                   command-line options override it
 				  --def <name>=<value>
