@@ -102,8 +102,6 @@ public class ConvXdxf2Pbdic {
 		}
 
 		MergeMode mergeDefs = argsHlp.requireParsed(MergeMode::parse, cli, "merge-defs", "--merge-defs/-m");
-
-		cli.put("merge-defs", mergeDefs.name());
 		argsHlp.listProperties(cli);
 
 		// 1. Language files

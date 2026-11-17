@@ -444,22 +444,15 @@ public class ArgsHelper {
 	}
 
 	public int resolveInt(Map<String, String> cli, String key, int def) {
-		String val = resolve(cli, key, null);
-		if (val == null || val.isBlank()) {
-			cli.put(key, String.valueOf(def));
-			sources.put(key, FROM_DEFAULT);
-			return def;
-		}
-
-		try {
-			return Integer.parseInt(val);
-		} catch (NumberFormatException e) {
-			throw CliException.error("Invalid integer value for '%s': %s", key, val);
-		}
+		return resolveParsed(val -> parseInt(key, val), cli, key, def);
 	}
 
 	public int requireInt(Map<String, String> cli, String key, String desc) {
-		String val = require(cli, key, desc);
+		return requireParsed(val -> parseInt(key, val), cli, key, desc);
+	}
+
+	/** {@code val} as an int; otherwise an error naming {@code key}. */
+	private static int parseInt(String key, String val) {
 		try {
 			return Integer.parseInt(val);
 		} catch (NumberFormatException e) {
@@ -468,30 +461,19 @@ public class ArgsHelper {
 	}
 
 	public boolean resolveBool(Map<String, String> cli, String key, boolean def) {
-		String val = resolve(cli, key, null);
-		if (val == null || val.isBlank()) {
-			cli.put(key, String.valueOf(def));
-			sources.put(key, FROM_DEFAULT);
-			return def;
-		}
-
-		return switch (lower(val)) {
-		case "true" -> true;
-		case "false" -> false;
-		default -> {
-			throw CliException.error("Invalid boolean value for '%s': %s", key, val);
-		}
-		};
+		return resolveParsed(val -> parseBool(key, val), cli, key, def);
 	}
 
 	public boolean requireBool(Map<String, String> cli, String key, String desc) {
-		String val = require(cli, key, desc);
+		return requireParsed(val -> parseBool(key, val), cli, key, desc);
+	}
+
+	/** {@code true} or {@code false} in any case; otherwise an error naming {@code key}. */
+	private static boolean parseBool(String key, String val) {
 		return switch (lower(val)) {
 		case "true" -> true;
 		case "false" -> false;
-		default -> {
-			throw CliException.error("Invalid boolean value for '%s': %s", key, val);
-		}
+		default -> throw CliException.error("Invalid boolean value for '%s': %s", key, val);
 		};
 	}
 
@@ -527,7 +509,10 @@ public class ArgsHelper {
 	 * Optional option, converted by {@code parser}: the value of {@code key} in
 	 * {@code cli}, passed to {@code parser}. When it is missing or blank, returns
 	 * {@code def}, stored back in {@code cli} as {@code String.valueOf(def)} and
-	 * listed as a default by {@link #listProperties}.<br>
+	 * listed as a default by {@link #listProperties}. Otherwise the value as
+	 * parsed is stored back in {@code cli} ({@code String.valueOf}), so that
+	 * {@link #listProperties} shows it as understood (e.g. {@code exact} as
+	 * {@code EXACT}).<br>
 	 * {@code parser} reports an invalid value itself, by throwing a
 	 * {@link CliException} (e.g. {@code MergeMode::parse}); any other exception it
 	 * throws is not caught.
@@ -535,25 +520,31 @@ public class ArgsHelper {
 	public <PA> PA resolveParsed(Function<String, PA> parser, Map<String, String> cli, String key, PA def) {
 		String val = resolve(cli, key, null);
 		if (val == null || val.isBlank()) {
-			cli.put(key, String.valueOf(def));
-			sources.put(key, FROM_DEFAULT);
+			if (def != null) {
+				cli.put(key, String.valueOf(def));
+				sources.put(key, FROM_DEFAULT);
+			}
 			return def;
 		}
-
-		return parser.apply(val);
+		PA value = parser.apply(val);
+		cli.put(key, String.valueOf(value));
+		return value;
 	}
 
 	/**
 	 * Required option, converted by {@code parser}: the value of {@code key} in
 	 * {@code cli}, passed to {@code parser}. When it is missing, a usage error
-	 * naming {@code desc}, as in {@link #require}.<br>
+	 * naming {@code desc}, as in {@link #require}. The value as parsed is stored
+	 * back in {@code cli} ({@code String.valueOf}), so that
+	 * {@link #listProperties} shows it as understood.<br>
 	 * {@code parser} reports an invalid value itself, by throwing a
 	 * {@link CliException} (e.g. {@code MergeMode::parse}); any other exception it
 	 * throws is not caught.
 	 */
 	public <PA> PA requireParsed(Function<String, PA> parser, Map<String, String> cli, String key, String desc) {
-		String val = require(cli, key, desc);
-		return parser.apply(val);
+		PA value = parser.apply(require(cli, key, desc));
+		cli.put(key, String.valueOf(value));
+		return value;
 	}
 
 	void log(String msg, Object... objects) {
