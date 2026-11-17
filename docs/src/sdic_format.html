@@ -1,0 +1,194 @@
+<!doctype html>
+<!--
+  Source of docs/sdic_format.pdf. To rebuild the PDF (A4), from the project root:
+    chromium --headless --no-pdf-header-footer \
+      --print-to-pdf=docs/sdic_format.pdf docs/src/sdic_format.html
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PocketBook SDIC Format</title>
+<style>
+  @page { size: A4; margin: 16mm 18mm 16mm 18mm; }
+  :root { --ink: #1d2433; --muted: #5b6475; --line: #c9d3e3; --navy: #1e2b47; --blue: #2d5d93; --soft: #f3f5f9; --code: #f4f7fb; --red: #9b1c1c; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-family: "Liberation Sans", "Helvetica", "Arial", sans-serif; color: var(--ink); font-size: 10pt; line-height: 1.42; margin: 0; }
+  code, pre { font-family: "Liberation Mono", "DejaVu Sans Mono", monospace; font-size: 0.9em; }
+  h1 { font-size: 22pt; text-align: center; margin: 4px 0 4px; color: var(--navy); }
+  .subtitle { color: var(--blue); font-size: 12pt; margin-bottom: 8px; }
+  .date { color: var(--blue); font-style: italic; font-size: 9.5pt; margin: 6px 0 10px 16px; }
+  hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0 4px; }
+  h2 { font-size: 13.5pt; color: var(--navy); margin: 18px 0 6px; break-after: avoid; }
+  h3 { font-size: 11pt; color: var(--blue); margin: 10px 0 4px; break-after: avoid; }
+  p { margin: 0 0 7px; text-align: justify; }
+  ul { margin: 0 0 7px; padding-left: 18px; }
+  li { margin: 2px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 4px 0 10px; font-size: 9.2pt; break-inside: avoid; }
+  th, td { border: 1px solid #d6dbe4; padding: 4px 7px; text-align: left; vertical-align: top; }
+  th { background: var(--navy); color: #fff; font-weight: 600; }
+  tr:nth-child(even) td { background: var(--soft); }
+  pre { background: var(--code); border: 1px solid var(--line); padding: 7px 9px; white-space: pre; margin: 4px 0 10px; font-size: 8.5pt; line-height: 1.4; break-inside: avoid; }
+  .warn { color: var(--red); font-weight: 700; margin: 6px 0 10px 16px; font-size: 9.6pt; break-inside: avoid; }
+  .warn::before { content: "■ "; }
+  .foot { text-align: center; color: var(--blue); font-size: 8.5pt; margin-top: 16px; border-top: 1px solid var(--line); padding-top: 6px; }
+</style>
+</head>
+<body>
+
+<h1>PocketBook SDIC Format</h1>
+<div class="subtitle">Reverse Engineering Report &amp; Converter Implementation Notes</div>
+<p>Binary format analysis of PocketBook's native .dic dictionary format, derived from converter.exe output paired with known XDXF source files and the LanguageFilesPocketbookConverter language files (collates.txt, morphems.txt, keyboard.txt), and confirmed by the open-source converter <b>xdxf-2-pbdic</b> (<code>java/ConvXdxf2Pbdic.java</code>) on a PocketBook InkPad.</p>
+<div class="date">March 2026 — revised November 2026 to match the current implementation</div>
+<hr>
+
+<h2>1. Overview</h2>
+<p>The PocketBook .dic format is a proprietary binary dictionary format consumed by PocketBook e-reader firmware. Conversion from XDXF was originally only possible with a closed-source Windows tool (converter.exe) distributed on the MobileRead forums. This report documents the binary layout of the format, reverse-engineered from known XDXF/DIC file pairs, as implemented in xdxf-2-pbdic.</p>
+<p>The format identifier is the four-byte magic string <b>SDIC</b> at the start of every file. Definitions use a compact binary markup with single-byte control codes (0x01–0x03, 0x0A) for bold, italic and newlines. Every definition begins and ends with a space byte (0x20).</p>
+
+<h2>2. File Layout</h2>
+<p>A .dic file consists of a fixed 128-byte header followed by contiguous sections. The collation table is stored uncompressed. The morphem, keyboard and index blocks are each a 4-byte little-endian decompressed size followed by zlib-compressed data. <b>Definition blocks are raw zlib streams only — they have no size prefix.</b></p>
+<table>
+  <tr><th>Section</th><th>Offset</th><th>Format</th><th>Notes</th></tr>
+  <tr><td>Header</td><td>0x00</td><td>128 bytes, fixed</td><td>Magic, counts, section offsets, title</td></tr>
+  <tr><td>Collation table</td><td>header[0x24] = 0x80</td><td>uint32 byte count + uint32 pairs</td><td>Unicode code point → normalised code point</td></tr>
+  <tr><td>Morphem block</td><td>header[0x28]</td><td>uint32 dsz + zlib</td><td>Inflection stripping rules (morphems.txt)</td></tr>
+  <tr><td>Keyboard block</td><td>header[0x2c]</td><td>uint32 dsz + zlib</td><td>On-screen keyboard layout (keyboard.txt)</td></tr>
+  <tr><td>Word index block</td><td>header[0x38]</td><td>uint32 dsz + zlib</td><td>Sparse index: compressed size + first word per block</td></tr>
+  <tr><td>Def blocks</td><td>header[0x3c]</td><td>N × raw zlib (no size prefix)</td><td>One block per index entry; each holds several entries</td></tr>
+</table>
+<div class="warn">Def blocks differ from all other sections: they are raw zlib streams with no uint32 decompressed-size prefix. Their compressed sizes are stored in the word index only.</div>
+
+<h2>3. Header (128 bytes)</h2>
+<p>The header occupies the first 0x80 bytes. Integers are little-endian unsigned. Example values: the Kaikki 2026-11.1 PT→PT dictionary (383,987 entries).</p>
+<table>
+  <tr><th>Offset</th><th>Size</th><th>Field</th><th>Value (example)</th><th>Description</th></tr>
+  <tr><td>0x00</td><td>4</td><td>magic</td><td>SDIC</td><td>Format identifier, ASCII</td></tr>
+  <tr><td>0x04</td><td>4</td><td>version</td><td>0x00000101</td><td>Always observed as 0x0101</td></tr>
+  <tr><td>0x08</td><td>4</td><td>entry_count</td><td>0x0005DBF3</td><td>Total dictionary entries across all def blocks</td></tr>
+  <tr><td>0x0c</td><td>4</td><td>unknown</td><td>0x0000FFFC</td><td>Purpose unknown; written as observed</td></tr>
+  <tr><td>0x10</td><td>20</td><td>(reserved)</td><td>zeros</td><td>Padding; write zeros</td></tr>
+  <tr><td>0x24</td><td>4</td><td>collation_offset</td><td>0x00000080</td><td>Offset of the collation table (always 0x80)</td></tr>
+  <tr><td>0x28</td><td>4</td><td>morphem_offset</td><td>0x000006B0</td><td>Offset of the morphem block</td></tr>
+  <tr><td>0x2c</td><td>4</td><td>keyboard_offset</td><td>0x00000738</td><td>Offset of the keyboard block</td></tr>
+  <tr><td>0x30</td><td>8</td><td>(reserved)</td><td>zeros</td><td>Padding; write zeros</td></tr>
+  <tr><td>0x38</td><td>4</td><td>index_offset</td><td>0x00000862</td><td>Offset of the word index block</td></tr>
+  <tr><td>0x3c</td><td>4</td><td>defblocks_offset</td><td>0x0000720F</td><td>Offset of the first def block</td></tr>
+  <tr><td>0x40</td><td>64</td><td>book_name</td><td>Wiktionary.org pt-pt (Kaikki 2026-11.1)</td><td>UTF-8, at most 63 bytes, NUL-padded to 0x80</td></tr>
+</table>
+
+<h2>4. Collation Table</h2>
+<p>The collation table drives case-insensitive and accent-insensitive search. It is stored uncompressed immediately after the header at offset 0x80: a <b>uint32 byte count</b>, then one little-endian uint32 per mapping, holding the source code point in its low half and the normalised code point in its high half — that is, a uint16 pair (source, normalised) in byte order. Pairs are sorted by source code point. A normalised value of 0x0000 means the character is ignored (punctuation, whitespace). Identity mappings (a character mapped to itself) are not written; any code point absent from the table is its own normalised form. Only code points up to 0xFFFF can be stored.</p>
+<p>The Portuguese table has 395 pairs (1,580 bytes after the count). It is derived from collates.txt in the language folder: the first line lists the ignored characters; each following line is <code>chars=BASE</code>.</p>
+<pre># collates.txt line:          # resulting binary (after the uint32 byte count):
+aáàâãä...=A                    61 00 41 00   (a → A)
+                               E1 00 41 00   (á → A) ...
+# first line, ignored characters (→ 0x0000):
+.,-_ '`!?:;...                 2E 00 00 00   (. → ignored)
+                               21 00 00 00   (! → ignored)</pre>
+
+<h2>5. Compressed Block Format</h2>
+<p>The morphem, keyboard and word index blocks share a common container format:</p>
+<pre>uint32_le  decompressed_size   // size of the data after decompression
+byte[]     zlib_data           // standard zlib (deflate) stream</pre>
+<p><b>Definition blocks do not use this format.</b> They are raw zlib streams with no size prefix. The compressed size of each def block is obtained from the word index; the decompressed size is not stored anywhere and follows from the zlib stream itself.</p>
+
+<h2>6. Morphem Block</h2>
+<p>The decompressed content of the morphem block is the content of morphems.txt (UTF-8, a byte-order mark removed), <b>uppercased</b> and encoded in UTF-16 LE (2 bytes per character). Empty lines are dropped; each line is followed by a uint16 NUL (0x0000), and the block ends with one more uint16 NUL (a double NUL after the last line). It holds inflection-stripping rules that let the firmware find the base form of an inflected word (e.g. running → run); they are interpreted by the firmware at lookup time.</p>
+
+<h2>7. Keyboard Block</h2>
+<p>The decompressed content of the keyboard block is the verbatim content of keyboard.txt (UTF-8). It defines the layout of the on-screen keyboard used to type a word to look up; it is embedded as is and interpreted by the firmware.</p>
+
+<h2>8. Word Index Block</h2>
+<p>The word index is a sparse index: one entry per definition block, with the compressed size of that block and its first headword. The firmware uses binary search on it to find the right def block without decompressing all blocks. Each entry in the decompressed index stream:</p>
+<pre>uint16_le  compressed_size     // compressed byte size of the corresponding def block
+byte[]     word\0              // UTF-8 NUL-terminated first headword of that block</pre>
+<p>Entries are contiguous with no padding. Index entry N corresponds to def block N (def block 0 is at defblocks_offset). The index ends with a uint16 0x0000 terminator, as in converter.exe output; without it the firmware reads past the end of the index into adjacent memory, causing crashes when several dictionaries are loaded.</p>
+<div class="warn">Firmware index size limit: the decompressed index must stay below about 55,000 bytes — exceeding it makes the firmware hang on dictionary load. This limits the number of def blocks; xdxf-2-pbdic puts at most 110 entries in a block, which keeps the index at about 50,000 bytes for a dictionary of about 384,000 entries (Kaikki 2026-11.1 PT→PT: 50,155 bytes).</div>
+
+<h2>9. Definition Blocks</h2>
+<p>Definition blocks are the bulk of the file. Each block is a raw zlib stream with no size prefix; its compressed size comes from the word index. Each block decompresses to a sequence of dictionary entries followed by a two-byte NUL terminator. Each entry:</p>
+<pre>uint16_le  entry_length        // total byte length of this entry (including this uint16)
+byte[]     word\0              // UTF-8 NUL-terminated headword
+byte[]     definition\0        // UTF-8 NUL-terminated definition (see §10 for encoding)
+
+// End of block — mandatory 2-byte terminator:
+uint16_le  0x0000              // signals end of block to firmware</pre>
+<p>entry_length counts the bytes from the start of the uint16 to the end of the definition's NUL terminator, inclusive, which allows forward scanning without parsing the definition. Entries are sorted by collation key across all blocks.</p>
+<div class="warn">Every def block must end with a 0x0000 uint16 after the last entry. Without this terminator the firmware reads past the last entry into garbage bytes and hangs.</div>
+<div class="warn">Firmware decompression buffer limit: a block must decompress to at most about 27,774 bytes (the largest observed in converter.exe output). Exceeding this overflows the firmware's fixed decompression buffer and crashes it. This limit is independent of — and, for highly compressible text, stricter than — the compressed size of 4,096 bytes.</div>
+<p>xdxf-2-pbdic therefore closes a block before the entry that would break one of three limits: <b>110 entries</b>, <b>27,000 bytes decompressed</b> (terminator included), or — once the block holds more than 3,000 bytes — <b>4,096 bytes compressed</b>, as converter.exe. Because one entry must fit in one block, a definition larger than a block on its own is cut at a newline or a space (never inside a word or a bold/italic span) and ends with <code>[...]</code>, and definitions of duplicate headwords are joined only when the result still fits (see the design reference).</p>
+
+<h2>10. Inline Formatting Codes</h2>
+<p>Definition text uses single-byte control codes for text styles, inline within the UTF-8 definition. <b>Every definition must begin with a space byte (0x20)</b> — the firmware requires it.</p>
+<table>
+  <tr><th>Byte</th><th>Meaning</th><th>HTML equivalent</th><th>Example context</th></tr>
+  <tr><td>0x20</td><td>Leading / trailing space (required)</td><td>—</td><td>First and last byte of every definition</td></tr>
+  <tr><td>0x01</td><td>End format span</td><td>&lt;/b&gt; or &lt;/i&gt;</td><td>After bold/italic text</td></tr>
+  <tr><td>0x02</td><td>Begin bold</td><td>&lt;b&gt;</td><td>Part of speech: Substantivo, Verbo…</td></tr>
+  <tr><td>0x03</td><td>Begin italic</td><td>&lt;i&gt;</td><td>Gender markers, cross-references, labels</td></tr>
+  <tr><td>0x0A</td><td>Newline</td><td>&lt;br/&gt; / end of &lt;p&gt;, &lt;div&gt;, &lt;li&gt;</td><td>Between senses, after the POS line</td></tr>
+  <tr><td>0x00</td><td>NUL terminator</td><td>—</td><td>Ends the word and definition fields</td></tr>
+</table>
+<p>Spans do not nest: a 0x01 always closes the open span. List items start with a bullet • (U+2022, encoded 0xE2 0x80 0xA2) followed by a space, written by xdxf-2-pbdic for each <code>&lt;li&gt;</code>; <code>&lt;ol&gt;</code> and <code>&lt;ul&gt;</code> produce nothing themselves. Other tags are dropped, keeping their text; HTML entities are decoded; literal newlines in the XDXF text are ignored. Joined definitions of a duplicate headword are separated by a blank line, <code>0x0A 0x20 0x0A</code>.</p>
+<div class="warn">Firmware spacing rules — all must hold or the firmware may crash: (1) every definition starts with 0x20; (2) every definition ends with 0x20; (3) every 0x01 is followed by 0x20; (4) every 0x0A is preceded by 0x20. xdxf-2-pbdic enforces them in a post-processing pass on every definition, and also writes 0x02 / 0x03 followed by 0x20 and exactly one 0x20 after each 0x0A.</div>
+<p>Examples (output of xdxf-2-pbdic for a whole definition; the final newline of a definition is trimmed):</p>
+<table>
+  <tr><th>XDXF definition</th><th>Binary output</th></tr>
+  <tr><td>&lt;p&gt;&lt;b&gt;POS&lt;/b&gt;&lt;/p&gt;&lt;p&gt;x&lt;/p&gt;</td><td>0x20 0x02 0x20 POS 0x01 0x20 0x20 0x0A 0x20 x 0x20</td></tr>
+  <tr><td>&lt;ol&gt;&lt;li&gt;um&lt;/li&gt;&lt;li&gt;dois&lt;/li&gt;&lt;/ol&gt;</td><td>0x20 • 0x20 um 0x20 0x0A 0x20 • 0x20 dois 0x20</td></tr>
+  <tr><td>a (&lt;i&gt;label&lt;/i&gt;) b</td><td>0x20 a 0x20 ( 0x03 0x20 label 0x01 0x20 ) 0x20 b 0x20</td></tr>
+  <tr><td>a&lt;br&gt;b</td><td>0x20 a 0x20 0x0A 0x20 b 0x20</td></tr>
+</table>
+
+<h2>11. Converter Implementation</h2>
+<p>The converter is <b>xdxf-2-pbdic</b>, a Java 25 source program (<code>java/ConvXdxf2Pbdic.java</code>, run by <code>linux/xdxf-2-pbdic</code>) in the same style as the rest of the toolchain. Input: an XDXF file (or stdin), a language code and a merge mode (<code>-m ALWAYS|EXACT|NEVER</code>). Output: a .dic file, written only when everything succeeded. Language files are read from <code>lang/&lt;lang&gt;/</code>, or the folder given with <code>-D</code>. Options and design choices are described in <code>docs/toolchain-design-reference.pdf</code>.</p>
+<h3>Phase 1 — Language Files</h3>
+<p>collates.txt is parsed into a map of code point → normalised code point; morphems.txt is uppercased and re-encoded as UTF-16 LE (§6); keyboard.txt is read as raw UTF-8 bytes.</p>
+<h3>Phase 2 — Parse XDXF</h3>
+<p>A SAX parser streams the entries; each definition's HTML is converted to the inline codes of §10. An <code>&lt;ar&gt;</code> with several <code>&lt;k&gt;</code> headwords gives one entry per headword; entries with an empty definition are skipped. A definition too large for one block is cut and ends with <code>[...]</code>.</p>
+<h3>Phase 3 — Sort and Merge</h3>
+<p>Entries are sorted by collation key (each headword mapped through the collation table, ignored characters skipped), then by lowercase word, then by word. A definition repeated for the same headword is kept once. Duplicate headwords are then handled by the merge mode: <b>ALWAYS</b> treats headwords that differ only in case as one and joins different definitions; <b>EXACT</b> joins different definitions of the exact same headword; <b>NEVER</b> joins nothing.</p>
+<h3>Phase 4 — Pack into Blocks</h3>
+<p>Entries are serialised (<code>uint16 len | word\0 | def\0</code>) into blocks with the three limits of §9; each block gets its 0x0000 terminator and is compressed with zlib. No uint32 decompressed size is prepended — def blocks are raw zlib only.</p>
+<h3>Phase 5 — Build Word Index</h3>
+<p>One index entry per def block: <code>uint16 compressed_size | first_word\0</code>, then the 0x0000 terminator; the whole index is compressed and prefixed with its uint32 decompressed size.</p>
+<h3>Phase 6 — Build Collation Table</h3>
+<p>The uint32 byte count, then the non-identity pairs as little-endian uint32 values sorted by source code point (§4). This section is not compressed.</p>
+<h3>Phase 7 — Write Header and Assemble File</h3>
+<p>Compute all section offsets, write the 128-byte header, then concatenate the sections in order:</p>
+<pre>header          (128 bytes, fixed)
+collation table (uint32 byte count + uint32 pairs, no compression)
+morphem block   (uint32 dsz + zlib)
+keyboard block  (uint32 dsz + zlib)
+word index      (uint32 dsz + zlib)
+def block 0     (raw zlib — no size prefix)
+def block 1     (raw zlib — no size prefix)
+...
+def block N-1   (raw zlib — no size prefix)</pre>
+
+<h2>12. Remaining Unknowns</h2>
+<table>
+  <tr><th>Offset</th><th>Value</th><th>Best guess</th><th>Impact</th></tr>
+  <tr><td>0x04</td><td>0x00000101</td><td>Format version (major.minor)</td><td>Written as is; confirmed safe</td></tr>
+  <tr><td>0x0c</td><td>0x0000FFFC</td><td>Flags or firmware limit hint</td><td>Written as is; constant across all tested files</td></tr>
+  <tr><td>0x10–0x23</td><td>zeros</td><td>Reserved / padding</td><td>Write zeros</td></tr>
+  <tr><td>0x30–0x37</td><td>zeros</td><td>Reserved / padding</td><td>Write zeros</td></tr>
+</table>
+<p>None of these unknowns affect converter correctness: they are written with the observed constant values, confirmed stable across many generated dictionaries.</p>
+
+<h2>13. Firmware Problems Found During Implementation</h2>
+<p>The following issues were found on a PocketBook InkPad while implementing xdxf-2-pbdic; the resolutions are what the converter does now.</p>
+<table>
+  <tr><th>Issue</th><th>Root cause</th><th>Resolution</th></tr>
+  <tr><td>Dictionary hangs on load</td><td>Def blocks lacked the 0x0000 end-of-block terminator; the firmware read past the last entry</td><td>uint16 0x0000 after the last entry of every def block</td></tr>
+  <tr><td>Dictionary hangs on load (index)</td><td>Decompressed index over the firmware's ~55,000-byte limit</td><td>At most 110 entries per block, which bounds the number of blocks</td></tr>
+  <tr><td>Crashes with several dictionaries loaded</td><td>Index without terminator; the firmware read past its end</td><td>uint16 0x0000 after the last index entry</td></tr>
+  <tr><td>Double bullet in list items</td><td>The bullet was added both as XDXF text and by the converter for <code>&lt;li&gt;</code></td><td>Bullets are written only by xdxf-2-pbdic, for each <code>&lt;li&gt;</code></td></tr>
+  <tr><td>Definitions render without leading space</td><td>The leading 0x20 was not written, or trimmed away</td><td>Post-processing pass adds it after trimming</td></tr>
+  <tr><td>Firmware crashes when rendering definitions</td><td>0x0A not preceded by 0x20; 0x01 not followed by 0x20; definition not ending with 0x20</td><td>Post-processing pass enforces the spacing rules (§10)</td></tr>
+  <tr><td>Firmware crashes after the spacing fixes</td><td>The extra spaces compress so well that a 4,096-byte compressed block reached ~56,000 bytes decompressed, overflowing the ~27,774-byte buffer</td><td>Decompressed limit of 27,000 bytes per block in addition to the compressed 4,096 and the 110 entries; oversized definitions cut with <code>[...]</code>; joins that would not fit are not done</td></tr>
+</table>
+
+<div class="foot">PocketBook SDIC Format — Reverse Engineering Report · March 2026, revised November 2026</div>
+</body>
+</html>

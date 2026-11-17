@@ -202,7 +202,7 @@ lang/
   en/  pt/      collates.txt  keyboard.txt  morphems.txt
 windows/        converter.exe and language files for the original Windows converter (not in git)
 docs/           sdic_format.pdf  toolchain-design-reference.pdf  architecture.html
-  src/          toolchain-design-reference.html  (source of the PDF)
+  src/          toolchain-design-reference.html  sdic_format.html  (sources of the PDFs)
 ```
 
 ## Project Structure
