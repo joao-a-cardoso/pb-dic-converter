@@ -167,8 +167,8 @@ public class ConvXdxf2Pbdic {
 					if (joined.length > maxDefinitionBytes(keepWord)) {
 						// merged entry would not fit in a block: start a new entry for this word;
 						// the following definitions are merged into it
-						LOG.err(String.format("Note: '%s' — merged definitions reached the block limit (%,d bytes): new entry started",
-								e.word(), maxDefinitionBytes(keepWord)));
+						LOG.err(String.format("Note: definition of '%s' not joined: the result would be %,d bytes, more than fits in one block (%,d); kept as a separate entry",
+								e.word(), joined.length, maxDefinitionBytes(keepWord)));
 						merged.add(e);
 					} else {
 						merged.set(merged.size() - 1, new ParsedEntry(keepWord, joined));
