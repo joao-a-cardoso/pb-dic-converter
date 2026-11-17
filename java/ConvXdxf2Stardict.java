@@ -11,7 +11,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -21,6 +20,7 @@ import java.util.stream.Collectors;
 
 import shared.ArgsHelper;
 import shared.IoHelper;
+import shared.MergeMode;
 import shared.CliException;
 import shared.ToolLog;
 import shared.ToolRunner;
@@ -52,7 +52,10 @@ public class ConvXdxf2Stardict {
 	static final String TOOL = "xdxf-2-stardict";
 	private static final ToolLog LOG = new ToolLog(TOOL);
 
-	/** Files of a StarDict dictionary named "stardict" (.syn: synonyms, not written but removed if stale). */
+	/**
+	 * Files of a StarDict dictionary named "stardict" (.syn: synonyms, not written
+	 * but removed if stale).
+	 */
 	static final List<String> STARDICT_EXTENSIONS = List.of(".ifo", ".idx", ".dict", ".dict.dz", ".syn");
 
 	static final String version = "2.4.2";
@@ -86,12 +89,9 @@ public class ConvXdxf2Stardict {
 			throw CliException.error(String.format("Error: input file not found: %s", xdxfFile));
 		}
 
-		String mergeDefs = argsHlp.requireUC(cli, "merge-defs", "--merge-defs/-m");
-		if (!mergeDefs.equals("ALWAYS") && !mergeDefs.equals("EXACT") && !mergeDefs.equals("NEVER")) {
-			throw CliException.error(String.format("Error: -m / --merge-defs must be ALWAYS, EXACT or NEVER, got: %s", mergeDefs));
-		}
+		MergeMode mergeDefs = argsHlp.requireParsed(MergeMode::parse,cli, "merge-defs", "--merge-defs/-m");
 
-		cli.put("merge-defs", mergeDefs);
+		cli.put("merge-defs", mergeDefs.name());
 		argsHlp.listProperties(cli);
 
 		// 1. Parse XDXF
@@ -124,33 +124,21 @@ public class ConvXdxf2Stardict {
 		entries.sort(Comparator.comparing((ParsedEntry e) -> lower(e.word()))
 				.thenComparing(e -> e.word()));
 
-		// 3. Merge/dedup
+		// 3. Merge/dedup headwords according to -m / --merge-defs (see MergeMode)
 		LOG.err("Merging duplicates...");
 		var merged = new ArrayList<ParsedEntry>(entries.size());
 		for (ParsedEntry e : entries) {
-			if (!merged.isEmpty()) {
-				ParsedEntry prev = merged.get(merged.size() - 1);
-				boolean sameWord = mergeDefs.equals("ALWAYS") ? prev.word().equalsIgnoreCase(e.word())
-						: prev.word().equals(e.word());
-				if (sameWord) {
-					boolean sameDef = Arrays.equals(prev.definition(), e.definition());
-					if (!sameDef && !mergeDefs.equals("NEVER")) {
-						merged.remove(merged.size() - 1);
-						String keepWord = mergeDefs.equals("ALWAYS")
-								? (prev.word().equals(lower(prev.word())) ? prev.word() : e.word())
-								: prev.word();
-						merged.add(new ParsedEntry(keepWord, joinDefs(prev.definition(), e.definition())));
-					} else if (sameDef) {
-						// identical — discard silently
-					} else {
-						// NEVER mode, different defs — keep both
-						merged.add(e);
-						continue;
-					}
-					continue;
-				}
+			if (merged.isEmpty()) {
+				merged.add(e);
+				continue;
 			}
-			merged.add(e);
+			ParsedEntry prev = merged.getLast();
+			switch (mergeDefs.decide(prev.word(), prev.definition(), e.word(), e.definition())) {
+			case DIFFERENT, KEEP_BOTH -> merged.add(e);
+			case DROP -> { } // identical definition
+			case JOIN -> merged.set(merged.size() - 1, new ParsedEntry(mergeDefs.keptWord(prev.word(), e.word()),
+					joinDefs(prev.definition(), e.definition())));
+			}
 		}
 		int mergedCount = entries.size() - merged.size();
 		if (mergedCount > 0) {
@@ -301,19 +289,19 @@ public class ConvXdxf2Stardict {
 	// ── Config / CLI helpers ──────────────────────────────────────────────────
 
 	/**
-	 * Maps a command line word to its option key, or {@code null} when it is not
-	 * an option of this tool. Used by {@link ArgsHelper#parse} both to read options
+	 * Maps a command line word to its option key, or {@code null} when it is not an
+	 * option of this tool. Used by {@link ArgsHelper#parse} both to read options
 	 * and to detect an option given where a value was expected.
 	 */
 	static String optionKey(String arg) {
 		return switch (arg) {
-		case "--config", "-c"     -> "config";
-		case "--def"              -> ArgsHelper.DEF_OPTION;
-		case "--in", "-i"         -> "in";
-		case "--out", "-o"        -> "out";
-		case "--name", "-n"       -> "name";
+		case "--config", "-c" -> "config";
+		case "--def" -> ArgsHelper.DEF_OPTION;
+		case "--in", "-i" -> "in";
+		case "--out", "-o" -> "out";
+		case "--name", "-n" -> "name";
 		case "--merge-defs", "-m" -> "merge-defs";
-		case "--compress", "-z"   -> "compress";
+		case "--compress", "-z" -> "compress";
 		default -> null;
 		};
 	}
@@ -323,34 +311,35 @@ public class ConvXdxf2Stardict {
 	}
 
 	static String usage() {
-		return TOOL + ": " + """
-				Convert an XDXF dictionary to StarDict format (HTML definitions).
+		return TOOL + ": "
+				+ """
+						Convert an XDXF dictionary to StarDict format (HTML definitions).
 
-				Usage:
-				  linux/xdxf-2-stardict -i <xdxf> -o <dir> -m ALWAYS|EXACT|NEVER -z true|false [options]
+						Usage:
+						  linux/xdxf-2-stardict -i <xdxf> -o <dir> -m ALWAYS|EXACT|NEVER -z true|false [options]
 
-				Required:
-				  -i / --in          Input XDXF file, or - for stdin
-				  -o / --out         Output directory (created if missing); receives
-				                     stardict.ifo, stardict.idx and stardict.dict.dz (or stardict.dict)
-				  -m / --merge-defs  Duplicate headword handling:
-				                       ALWAYS — case-insensitive match; merge different defs, drop identical
-				                       EXACT  — case-sensitive match;   merge different defs, drop identical
-				                       NEVER  — never merge; only drop byte-identical duplicates
-				  -z / --compress    true — write stardict.dict.dz (compressed); false — write stardict.dict
+						Required:
+						  -i / --in          Input XDXF file, or - for stdin
+						  -o / --out         Output directory (created if missing); receives
+						                     stardict.ifo, stardict.idx and stardict.dict.dz (or stardict.dict)
+						  -m / --merge-defs  Duplicate headword handling:
+						                       ALWAYS — case-insensitive match; merge different defs, drop identical
+						                       EXACT  — case-sensitive match;   merge different defs, drop identical
+						                       NEVER  — never merge; only drop byte-identical duplicates
+						  -z / --compress    true — write stardict.dict.dz (compressed); false — write stardict.dict
 
-				Optional:
-				  -n / --name        Dictionary title (default: name in the XDXF header,
-				                     else the output path without extension)
-				  -c / --config      .properties config file (namespace: xdxf2stardict.*);
-				                     command-line options override it
-				  --def <name>=<value>
-				                     Set or override a config variable (def); repeatable
-				  -h / --help        Show this help
+						Optional:
+						  -n / --name        Dictionary title (default: name in the XDXF header,
+						                     else the output path without extension)
+						  -c / --config      .properties config file (namespace: xdxf2stardict.*);
+						                     command-line options override it
+						  --def <name>=<value>
+						                     Set or override a config variable (def); repeatable
+						  -h / --help        Show this help
 
-				Examples:
-				  linux/xdxf-2-stardict -i data/out/kaikki-pt.xdxf -o data/out/kaikki-pt.d -m EXACT -z true
-				  linux/tab-2-xdxf -i data/out/kaikki-pt.tsv -o - -l pt -n "Dicionário PT" | linux/xdxf-2-stardict -i - -o data/out/kaikki-pt.d -m EXACT -z true
-				  """;
+						Examples:
+						  linux/xdxf-2-stardict -i data/out/kaikki-pt.xdxf -o data/out/kaikki-pt.d -m EXACT -z true
+						  linux/tab-2-xdxf -i data/out/kaikki-pt.tsv -o - -l pt -n "Dicionário PT" | linux/xdxf-2-stardict -i - -o data/out/kaikki-pt.d -m EXACT -z true
+						  """;
 	}
 }

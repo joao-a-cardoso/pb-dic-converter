@@ -185,7 +185,7 @@ java/           ConvStardict2Tab.java  ConvKaikki2Tab.java  ConvTab2Xdxf.java
                 term-translations_pt.properties   (kaikki-2-tab label translations)
   shared/       ToolRunner  CliException  ToolLog  ArgsHelper   (run, errors, messages, options/config)
                 IoHelper     (inputs/outputs: "-", .gz; all-or-nothing SafeOutput)
-                XdxfHelper  XmlHelper  DictzipHelper  JsonParser  JsonException
+                XdxfHelper  XmlHelper  DictzipHelper  MergeMode  JsonParser  JsonException
                 LangHelper  TermTranslator  TextHelper  Constants
 confs/          kaikki2xdxf-en-pt.config  kaikki2xdxf-pt-pt.config  stardict2xdxf-pt-pt.config
                 kaikki2stardict-en-pt.config  kaikki2stardict-pt-pt.config

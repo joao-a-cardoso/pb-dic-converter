@@ -21,11 +21,12 @@ import java.util.TreeMap;
 import java.util.zip.Deflater;
 
 import shared.ArgsHelper;
-import shared.IoHelper;
 import shared.CliException;
+import shared.Constants;
+import shared.IoHelper;
+import shared.MergeMode;
 import shared.ToolLog;
 import shared.ToolRunner;
-import shared.Constants;
 import shared.XdxfHelper;
 import shared.XdxfHelper.ParsedEntry;
 import shared.XdxfHelper.XdxfHeader;
@@ -100,13 +101,9 @@ public class ConvXdxf2Pbdic {
 			throw new CliException(null, 1, false); // messages already logged
 		}
 
-		String mergeDefs = argsHlp.requireUC(cli, "merge-defs", "--merge-defs/-m");
-		mergeDefs = upper(mergeDefs);
-		if (!mergeDefs.equals("ALWAYS") && !mergeDefs.equals("EXACT") && !mergeDefs.equals("NEVER")) {
-			throw CliException.error(String.format("Error: -m / --merge-defs must be ALWAYS, EXACT or NEVER, got: %s", mergeDefs));
-		}
+		MergeMode mergeDefs = argsHlp.requireParsed(MergeMode::parse, cli, "merge-defs", "--merge-defs/-m");
 
-		cli.put("merge-defs", mergeDefs);
+		cli.put("merge-defs", mergeDefs.name());
 		argsHlp.listProperties(cli);
 
 		// 1. Language files
@@ -146,50 +143,32 @@ public class ConvXdxf2Pbdic {
 		LOG.err("Sorting...");
 		sortByCollatedKey(entries, collation);
 
-		// 4. Merge/dedup headwords according to -m / --merge-defs mode:
-		// ALWAYS — headword match is case-insensitive; merge different defs, drop
-		// identical
-		// EXACT — headword match is case-sensitive; merge different defs, drop
-		// identical
-		// NEVER — headword match is case-sensitive; never merge, only drop
-		// byte-identical duplicates
+		// 4. Merge/dedup headwords according to -m / --merge-defs (see MergeMode)
 		LOG.err("Merging duplicates...");
 		var merged = new ArrayList<ParsedEntry>(entries.size());
 		for (ParsedEntry e : entries) {
-			if (!merged.isEmpty()) {
-				ParsedEntry prev = merged.get(merged.size() - 1);
-				boolean sameWord = mergeDefs.equals("ALWAYS") ? prev.word().equalsIgnoreCase(e.word())
-						: prev.word().equals(e.word());
-				if (sameWord) {
-					boolean sameDef = Arrays.equals(prev.definition(), e.definition());
-					if (!sameDef && !mergeDefs.equals("NEVER")) {
-						// ALWAYS: keep lowercase headword; EXACT: keep first
-						String keepWord = mergeDefs.equals("ALWAYS")
-								? (prev.word().equals(lower(prev.word())) ? prev.word()
-										: e.word())
-								: prev.word();
-						byte[] joined = joinDefsBlankLine(prev.definition(), e.definition());
-						if (joined.length > maxDefinitionBytes(keepWord)) {
-							// merged entry would not fit in a block: start a new entry for this word;
-							// the following definitions are merged into it
-							LOG.err(String.format("Note: '%s' — merged definitions reached the block limit (%,d bytes): new entry started",
-									e.word(), maxDefinitionBytes(keepWord)));
-							merged.add(e);
-							continue;
-						}
-						merged.remove(merged.size() - 1);
-						merged.add(new ParsedEntry(keepWord, joined));
-					} else if (sameDef) {
-						// byte-identical duplicate — discard silently
-					} else {
-						// NEVER mode, different defs — keep both
-						merged.add(e);
-						continue;
-					}
-					continue;
+			if (merged.isEmpty()) {
+				merged.add(e);
+				continue;
+			}
+			ParsedEntry prev = merged.getLast();
+			switch (mergeDefs.decide(prev.word(), prev.definition(), e.word(), e.definition())) {
+			case DIFFERENT, KEEP_BOTH -> merged.add(e);
+			case DROP -> { } // identical definition
+			case JOIN -> {
+				String keepWord = mergeDefs.keptWord(prev.word(), e.word());
+				byte[] joined = joinDefsBlankLine(prev.definition(), e.definition());
+				if (joined.length > maxDefinitionBytes(keepWord)) {
+					// merged entry would not fit in a block: start a new entry for this word;
+					// the following definitions are merged into it
+					LOG.err(String.format("Note: '%s' — merged definitions reached the block limit (%,d bytes): new entry started",
+							e.word(), maxDefinitionBytes(keepWord)));
+					merged.add(e);
+				} else {
+					merged.set(merged.size() - 1, new ParsedEntry(keepWord, joined));
 				}
 			}
-			merged.add(e);
+			}
 		}
 		int mergedCount = entries.size() - merged.size();
 		if (mergedCount > 0)
@@ -715,11 +694,6 @@ public class ConvXdxf2Pbdic {
 				raw = Arrays.copyOf(raw, Math.max(raw.length * 2, size + more));
 			}
 		}
-	}
-
-	/** Join two definition byte arrays with a newline separator. */
-	static byte[] joinDefs(byte[] a, byte[] b) {
-		return joinDefsBlankLine(a, b);
 	}
 
 	// Join two definitions with a blank line: 0x0a 0x20 0x0a (satisfies all spacing

@@ -25,7 +25,10 @@ public class ArgsHelper {
 	private final Consumer<String> logger;
 	private final Supplier<String> usage;
 
-	/** Option keys whose values are file or folder paths (shown with {@link #displayPath}). */
+	/**
+	 * Option keys whose values are file or folder paths (shown with
+	 * {@link #displayPath}).
+	 */
 	private static final java.util.Set<String> PATH_KEYS = java.util.Set.of("in", "out", "config", "langdir",
 			"terms-file", "xdxf", "dic");
 
@@ -64,7 +67,8 @@ public class ArgsHelper {
 	public ArgsHelper(String toolName, String namespace, Consumer<String> logger, Supplier<String> usage) {
 		super();
 
-		// accept "tab2xdxf" or "tab2xdxf." — the "." separator is added when keys are looked up
+		// accept "tab2xdxf" or "tab2xdxf." — the "." separator is added when keys are
+		// looked up
 		while (namespace.endsWith(".")) {
 			namespace = namespace.substring(0, namespace.length() - 1);
 		}
@@ -86,8 +90,8 @@ public class ArgsHelper {
 	 *                  when:
 	 *                  <ul>
 	 *                  <li>a word is not an option of the running tool;</li>
-	 *                  <li>an option has no value: it is the last word, or the
-	 *                  next word is itself an option of the running tool.</li>
+	 *                  <li>an option has no value: it is the last word, or the next
+	 *                  word is itself an option of the running tool.</li>
 	 *                  </ul>
 	 *                  A lone {@code -} (stdin/stdout) is never an option, so it is
 	 *                  accepted as a value.
@@ -96,8 +100,8 @@ public class ArgsHelper {
 	 *                  prints the usage to stdout and exits with code 0 (usage
 	 *                  shown because of an error goes to the logger, i.e. stderr).
 	 */
-	public static Map<String, String> parse(String[] args, Function<String, String> optionKey,
-			Consumer<String> logger, Supplier<String> usage) {
+	public static Map<String, String> parse(String[] args, Function<String, String> optionKey, Consumer<String> logger,
+			Supplier<String> usage) {
 		for (String arg : args) {
 			if (arg.equals("-h") || arg.equals("--help")) {
 				throw CliException.help();
@@ -162,12 +166,12 @@ public class ArgsHelper {
 	 * <li><b>End-of-line comments:</b> a {@code #} preceded by a space or tab
 	 * starts a comment ({@code tab2xdxf.lang=pt   # Portuguese}). A {@code #}
 	 * without whitespace before it is kept ({@code C#}); write {@code \#} for a
-	 * literal {@code #} after a space. Lines starting with {@code #} are
-	 * comments, as usual.</li>
+	 * literal {@code #} after a space. Lines starting with {@code #} are comments,
+	 * as usual.</li>
 	 * <li><b>Variables:</b> {@code def lang=pt} defines a variable, used in values
 	 * as {@code $lang} or {@code ${lang}} ({@code $$} = a literal {@code $}).
-	 * Variables may use other variables. An undefined variable, a variable
-	 * defined twice or a definition loop is an error (exit code 1).</li>
+	 * Variables may use other variables. An undefined variable, a variable defined
+	 * twice or a definition loop is an error (exit code 1).</li>
 	 * </ul>
 	 * Then checks the key style (see {@link #checkKeyStyle}).
 	 */
@@ -176,7 +180,10 @@ public class ArgsHelper {
 		return loadProperties(configPath, exitWhenFailed, Map.of());
 	}
 
-	/** Option key of {@code --def <name>=<value>}; the only option that may be repeated. */
+	/**
+	 * Option key of {@code --def <name>=<value>}; the only option that may be
+	 * repeated.
+	 */
 	public static final String DEF_OPTION = "def";
 
 	private static final java.util.regex.Pattern CLI_DEF = java.util.regex.Pattern.compile("([A-Za-z0-9_]+)=(.*)",
@@ -215,7 +222,10 @@ public class ArgsHelper {
 		return loadProperties(configPath, true, cliDefs);
 	}
 
-	/** As {@link #loadProperties(String, boolean)}, with {@code cliDefs} overriding the config's variables. */
+	/**
+	 * As {@link #loadProperties(String, boolean)}, with {@code cliDefs} overriding
+	 * the config's variables.
+	 */
 	public Properties loadProperties(String configPath, boolean exitWhenFailed, Map<String, String> cliDefs)
 			throws IOException, FileNotFoundException {
 		var props = new Properties();
@@ -333,9 +343,9 @@ public class ArgsHelper {
 
 	/**
 	 * A config uses either only bare keys ({@code in=}, for a single tool) or only
-	 * prefixed keys ({@code tab2xdxf.in=}, shareable by several tools). Mixing
-	 * them is an error: a bare key in a shared config would be taken by every
-	 * tool. Logs the bare keys and exits with code 1.
+	 * prefixed keys ({@code tab2xdxf.in=}, shareable by several tools). Mixing them
+	 * is an error: a bare key in a shared config would be taken by every tool. Logs
+	 * the bare keys and exits with code 1.
 	 */
 	private void checkKeyStyle(Path path, Properties props) {
 		var names = props.stringPropertyNames();
@@ -358,7 +368,8 @@ public class ArgsHelper {
 				.map(e -> PATH_KEYS.contains(e.getKey()) ? displayPath(e.getValue()) : e.getValue())
 				.mapToInt(v -> String.valueOf(v).length()).max().orElse(0);
 		var format = "|   %-" + maxLen + "s : %-" + Math.min(maxVal, 60) + "s   %s";
-		// options first, then the --def variables ("def <name>"), separated by an empty line
+		// options first, then the --def variables ("def <name>"), separated by an empty
+		// line
 		boolean defsStarted = false;
 		for (boolean defs : new boolean[] { false, true }) {
 			for (var en : ord.entrySet()) {
@@ -371,7 +382,8 @@ public class ArgsHelper {
 				}
 				String src = sources.get(en.getKey());
 				String val = PATH_KEYS.contains(en.getKey()) ? displayPath(en.getValue()) : en.getValue();
-				logRaw("%s", String.format(format, en.getKey(), val, src == null ? "" : "(" + src + ")").stripTrailing());
+				logRaw("%s",
+						String.format(format, en.getKey(), val, src == null ? "" : "(" + src + ")").stripTrailing());
 			}
 		}
 		logRaw("");
@@ -406,6 +418,13 @@ public class ArgsHelper {
 		}
 	}
 
+	public String resolve(Map<String, String> cli, String key, String def) {
+		if (!cli.containsKey(key) && def != null) {
+			sources.put(key, FROM_DEFAULT);
+		}
+		return cli.computeIfAbsent(key, _ -> def);
+	}
+
 	public String require(Map<String, String> cli, String key, String desc) {
 		String val = cli.get(key);
 		if (val == null) {
@@ -414,68 +433,13 @@ public class ArgsHelper {
 		return val;
 	}
 
-	public String requireUC(Map<String, String> cli, String key, String desc) {
-		String val = require(cli, key, desc);
+	public String resolveUC(Map<String, String> cli, String key, String def) {
+		String val = resolve(cli, key, def);
 		return upper(val);
 	}
 
-	public int requireInt(Map<String, String> cli, String key, String desc) {
+	public String requireUC(Map<String, String> cli, String key, String desc) {
 		String val = require(cli, key, desc);
-		try {
-			return Integer.parseInt(val);
-		} catch (NumberFormatException e) {
-			throw CliException.error("Invalid integer value for '%s': %s", key, val);
-		}
-	}
-
-	public boolean requireBool(Map<String, String> cli, String key, String desc) {
-		String val = require(cli, key, desc);
-		return switch (lower(val)) {
-		case "true" -> true;
-		case "false" -> false;
-		default -> {
-			throw CliException.error("Invalid boolean value for '%s': %s", key, val);
-		}
-		};
-	}
-
-	public String resolve(Map<String, String> cli, String key, String def) {
-		if (!cli.containsKey(key) && def != null) {
-			sources.put(key, FROM_DEFAULT);
-		}
-		return cli.computeIfAbsent(key, k -> def);
-	}
-
-	/**
-	 * Required language code: a two-letter ISO 639-1 code in any case. Returns it
-	 * in lower case (also stored back in {@code cli}); logs an error and exits
-	 * with code 1 when it is missing or invalid.
-	 */
-	public String requireLang(Map<String, String> cli, String key, String desc) {
-		return checkLang(cli, key, desc, require(cli, key, desc));
-	}
-
-	/**
-	 * Optional language code (default {@code def}), validated and lower-cased as
-	 * in {@link #requireLang}.
-	 */
-	public String resolveLang(Map<String, String> cli, String key, String desc, String def) {
-		return checkLang(cli, key, desc, resolve(cli, key, def));
-	}
-
-	private String checkLang(Map<String, String> cli, String key, String desc, String val) {
-		if (!LangHelper.validIso2(val)) {
-			throw CliException.error(
-					"Error: invalid language code '%s' for %s: expected a two-letter ISO 639-1 code (e.g. pt, en)", val,
-					desc);
-		}
-		String code = LangHelper.normalize(val);
-		cli.put(key, code);
-		return code;
-	}
-
-	public String resolveUC(Map<String, String> cli, String key, String def) {
-		String val = resolve(cli, key, def);
 		return upper(val);
 	}
 
@@ -487,6 +451,15 @@ public class ArgsHelper {
 			return def;
 		}
 
+		try {
+			return Integer.parseInt(val);
+		} catch (NumberFormatException e) {
+			throw CliException.error("Invalid integer value for '%s': %s", key, val);
+		}
+	}
+
+	public int requireInt(Map<String, String> cli, String key, String desc) {
+		String val = require(cli, key, desc);
 		try {
 			return Integer.parseInt(val);
 		} catch (NumberFormatException e) {
@@ -511,6 +484,78 @@ public class ArgsHelper {
 		};
 	}
 
+	public boolean requireBool(Map<String, String> cli, String key, String desc) {
+		String val = require(cli, key, desc);
+		return switch (lower(val)) {
+		case "true" -> true;
+		case "false" -> false;
+		default -> {
+			throw CliException.error("Invalid boolean value for '%s': %s", key, val);
+		}
+		};
+	}
+
+	/**
+	 * Optional language code (default {@code def}), validated and lower-cased as in
+	 * {@link #requireLang}.
+	 */
+	public String resolveLang(Map<String, String> cli, String key, String desc, String def) {
+		return checkLang(cli, key, desc, resolve(cli, key, def));
+	}
+
+	/**
+	 * Required language code: a two-letter ISO 639-1 code in any case. Returns it
+	 * in lower case (also stored back in {@code cli}); logs an error and exits with
+	 * code 1 when it is missing or invalid.
+	 */
+	public String requireLang(Map<String, String> cli, String key, String desc) {
+		return checkLang(cli, key, desc, require(cli, key, desc));
+	}
+
+	private String checkLang(Map<String, String> cli, String key, String desc, String val) {
+		if (!LangHelper.validIso2(val)) {
+			throw CliException.error(
+					"Error: invalid language code '%s' for %s: expected a two-letter ISO 639-1 code (e.g. pt, en)", val,
+					desc);
+		}
+		String code = LangHelper.normalize(val);
+		cli.put(key, code);
+		return code;
+	}
+
+	/**
+	 * Optional option, converted by {@code parser}: the value of {@code key} in
+	 * {@code cli}, passed to {@code parser}. When it is missing or blank, returns
+	 * {@code def}, stored back in {@code cli} as {@code String.valueOf(def)} and
+	 * listed as a default by {@link #listProperties}.<br>
+	 * {@code parser} reports an invalid value itself, by throwing a
+	 * {@link CliException} (e.g. {@code MergeMode::parse}); any other exception it
+	 * throws is not caught.
+	 */
+	public <PA> PA resolveParsed(Function<String, PA> parser, Map<String, String> cli, String key, PA def) {
+		String val = resolve(cli, key, null);
+		if (val == null || val.isBlank()) {
+			cli.put(key, String.valueOf(def));
+			sources.put(key, FROM_DEFAULT);
+			return def;
+		}
+
+		return parser.apply(val);
+	}
+
+	/**
+	 * Required option, converted by {@code parser}: the value of {@code key} in
+	 * {@code cli}, passed to {@code parser}. When it is missing, a usage error
+	 * naming {@code desc}, as in {@link #require}.<br>
+	 * {@code parser} reports an invalid value itself, by throwing a
+	 * {@link CliException} (e.g. {@code MergeMode::parse}); any other exception it
+	 * throws is not caught.
+	 */
+	public <PA> PA requireParsed(Function<String, PA> parser, Map<String, String> cli, String key, String desc) {
+		String val = require(cli, key, desc);
+		return parser.apply(val);
+	}
+
 	void log(String msg, Object... objects) {
 		logRaw(ToolLog.prefix(toolName, msg), objects);
 	}
@@ -523,5 +568,4 @@ public class ArgsHelper {
 	private void logRaw(String msg, Object... objects) {
 		logger.accept(objects.length == 0 ? msg : String.format(msg, objects));
 	}
-
 }
