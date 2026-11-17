@@ -105,7 +105,7 @@ public class ConvKaikki2Tab {
 		Path inFile = Path.of(input);
 
 		if (!Files.exists(inFile)) {
-			throw CliException.error(String.format("Error: file not found: %s", inFile));
+			throw CliException.error("Error: file not found: %s", ArgsHelper.displayPath(input));
 		}
 
 		argsHlp.listProperties(cli);
@@ -716,7 +716,7 @@ public class ConvKaikki2Tab {
 	static TermTranslator loadTermTranslations(Path file, boolean given) throws Exception {
 		if (!Files.exists(file)) {
 			if (given) {
-				throw CliException.error("Error: term translation file not found: %s", file);
+				throw CliException.error("Error: term translation file not found: %s", ArgsHelper.displayPath(file.toString()));
 			}
 			LOG.err("Term translations: none (%s not found) — labels are not translated", ArgsHelper.displayPath(file.toString()));
 			return TermTranslator.none();

@@ -79,7 +79,7 @@ public class ConvTab2Xdxf {
 		String langTo3 = LangHelper.langIso2toIso3(langTo);
 
 		if (!fromStdin && !Files.exists(Path.of(input))) {
-			throw CliException.error(String.format("Error: file not found: %s", input));
+			throw CliException.error("Error: file not found: %s", ArgsHelper.displayPath(input));
 		}
 
 		argsHlp.listProperties(cli);

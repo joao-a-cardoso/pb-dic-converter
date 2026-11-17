@@ -110,7 +110,7 @@ public class CheckPbdic {
 		boolean inputMissing = false;
 		for (Path p : List.of(xdxfFile, dicFile, collatesFile)) {
 			if (!Files.exists(p)) {
-				LOG.err("Error: file not found: " + p);
+				LOG.err("Error: file not found: " + ArgsHelper.displayPath(p.toString()));
 				inputMissing = true;
 			}
 		}

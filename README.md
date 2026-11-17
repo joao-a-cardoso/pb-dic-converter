@@ -156,7 +156,7 @@ Available configs:
 
 Every tool accepts `-c <config>`, `--def <name>=<value>` and `-h` / `--help`. Language codes (`-l`, `-t`) are two-letter ISO 639-1 codes, in any case (`pt`, `PT`). Progress messages go to stderr, so stdout is safe for piping.
 
-Outputs are all or nothing (`kaikki-2-tab`, `tab-2-xdxf`, `xdxf-2-stardict`): the output file, the StarDict files or stdout are written only at the end, once everything succeeded (validation included). Until then the output is kept in memory, compressed. On an error an existing output is left as it was, and a pipe receives nothing, so the next tool fails visibly instead of converting a cut-off input. A wrong output path (missing folder, read-only file) is reported at the start, before the work.
+Outputs are all or nothing (every converter: `kaikki-2-tab`, `stardict-2-tab`, `tab-2-xdxf`, `xdxf-2-pbdic`, `xdxf-2-stardict`): the output file, the StarDict files or stdout are written only at the end, once everything succeeded (validation included). Until then the output is kept in memory, compressed. On an error an existing output is left as it was, and a pipe receives nothing, so the next tool fails visibly instead of converting a cut-off input. A wrong output path (missing folder, read-only file) is reported at the start, before the work, in one line (no Java stack trace).
 
 `kaikki-2-tab` label translations: labels such as *Etymology*, *feminine* or the English domain topics (*Botany*, *Medicine*) are translated with a `.properties` file (`english-term=translation`, case-insensitive). By default it is `java/term-translations_<lang>.properties`, from `-l`; `--terms-file <file>` (config: `kaikki2tab.terms-file`) uses another one. The file used is logged; a missing default file only means the labels stay in English. Dictionaries whose definitions are in another language than the headwords (EN → PT) should point to the definitions' language — `confs/kaikki2xdxf-en-pt.config` uses `java/term-translations_${lang_to}.properties`.
 
@@ -170,7 +170,7 @@ PocketBook `.dic` size limit (`xdxf-2-pbdic` only — StarDict has no such limit
 - Merging stops when the next definition would not fit: it starts a new entry with the same headword, and the following definitions are merged into that one (`Note: '<word>' — merged definitions reached the block limit …`).
 - A single definition that is too large on its own is truncated at a line or word boundary and ends with `[...]` (`Warning: definition of '<word>' is … bytes … truncated`). In the Kaikki 2026-11 data this only affects *sistema*.
 
-`xdxf-2-stardict` writes `stardict.ifo`, `.idx` and `.dict.dz` (or `.dict`) into the `-o` folder; it replaces only these `stardict.*` files (and a stale `stardict.syn`) — other files in the folder are left alone.
+`xdxf-2-stardict` writes `stardict.ifo`, `.idx` and `.dict.dz` (or `.dict`) into the `-o` folder; it replaces only these `stardict.*` files (and a stale `stardict.syn`) — other files in the folder are left alone. If one of them is read-only, or the folder is not writable, it stops before any work and leaves the previous build as it was.
 
 If `--name` is not given, `xdxf-2-pbdic` and `xdxf-2-stardict` take the name from the XDXF header, falling back to the output file name.
 

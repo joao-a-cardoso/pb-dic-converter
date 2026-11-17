@@ -1,5 +1,4 @@
 import java.io.BufferedWriter;
-import java.io.IOException;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.nio.ByteBuffer;
@@ -61,20 +60,23 @@ public class ConvStardict2Tab {
 
 		Path inFile = Path.of(input);
 		if (!Files.exists(inFile)) {
-			throw CliException.error("Error: file not found: " + inFile);
+			throw CliException.error("Error: file not found: %s", ArgsHelper.displayPath(input));
 		}
 
 		argsHlp.listProperties(cli);
 
-		var entries = readStarDict(inFile);
-
-		try (OutputStream outStream = IoHelper.openOutput(output);
-				var writer = new BufferedWriter(new OutputStreamWriter(outStream, StandardCharsets.UTF_8))) {
-			for (var e : entries)
-				writer.write(e.word() + "\t" + e.definition().replace("\n", " ").replace("\t", " ") + "\n");
+		// the output is checked now (folder, permissions) and written only at the end,
+		// once everything succeeded (IoHelper.SafeOutput)
+		try (var out = IoHelper.openSafeOutput(output)) {
+			var entries = readStarDict(inFile);
+			try (var writer = new BufferedWriter(new OutputStreamWriter(out.stream(), StandardCharsets.UTF_8))) {
+				for (var e : entries)
+					writer.write(e.word() + "\t" + e.definition().replace("\n", " ").replace("\t", " ") + "\n");
+			}
+			out.commit();
+			LOG.err("Done. " + entries.size() + " entries written to "
+					+ (toStdout ? "<stdout>" : ArgsHelper.displayPath(output)) + ".");
 		}
-
-		LOG.err("Done. " + entries.size() + " entries written to " + (toStdout ? "<stdout>" : ArgsHelper.displayPath(output)) + ".");
 	}
 
 	// --- StarDict reader ---
@@ -85,7 +87,7 @@ public class ConvStardict2Tab {
 		try (var r = Files.newBufferedReader(ifoFile, StandardCharsets.UTF_8)) {
 			String firstLine = r.readLine();
 			if (!"StarDict's dict ifo file".equals(firstLine))
-				throw new IOException("Not a StarDict .ifo file: " + ifoFile);
+				throw CliException.error("Error: not a StarDict .ifo file: %s", ArgsHelper.displayPath(ifoFile.toString()));
 			String line;
 			while ((line = r.readLine()) != null) {
 				int eq = line.indexOf('=');
@@ -104,9 +106,9 @@ public class ConvStardict2Tab {
 		Path dictFile = Files.exists(dictDz) ? dictDz : dictRaw;
 
 		if (!Files.exists(idxFile))
-			throw new IOException("Missing: " + idxFile);
+			throw CliException.error("Error: file not found: %s", ArgsHelper.displayPath(idxFile.toString()));
 		if (!Files.exists(dictFile))
-			throw new IOException("Missing: " + dictFile);
+			throw CliException.error("Error: file not found: %s", ArgsHelper.displayPath(dictFile.toString()));
 
 		// Read .idx
 		byte[] idxData = Files.readAllBytes(idxFile);
@@ -136,7 +138,7 @@ public class ConvStardict2Tab {
 				dictData = new byte[needed];
 				int read = gzip.readNBytes(dictData, 0, needed);
 				if (read < needed)
-					throw new IOException("Truncated: " + dictFile + " (" + read + " of " + needed + " bytes)");
+					throw CliException.error("Error: truncated file: %s (%d of %d bytes)", ArgsHelper.displayPath(dictFile.toString()), read, needed);
 				// read to the end, so the gzip CRC check still runs
 				gzip.transferTo(OutputStream.nullOutputStream());
 			}

@@ -862,7 +862,7 @@ tab2xdxf.name=Wiktionário PT-&gt;PT (ReaderDict)</pre>
         <pre><span class="cmd">linux/xdxf-2-stardict</span> <span class="flag">-i</span> <span class="arg">data/out/kaikki-pt.xdxf</span> <span class="flag">-o</span> <span class="arg">data/out/kaikki-pt.d</span> <span class="flag">-m</span> <span class="arg">ALWAYS</span> <span class="flag">-z</span> <span class="arg">true</span></pre>
         <div class="note">
           <strong>Output:</strong> <code>-o</code> is a directory; it receives <code>stardict.ifo</code>, <code>stardict.idx</code> and <code>stardict.dict.dz</code> (<code>stardict.dict</code> with <code>-z false</code>).
-          Only these <code>stardict.*</code> files (and a stale <code>stardict.syn</code>) are replaced — other files in the folder are left alone. <code>-m</code> works as in step 5, without the <code>.dic</code> size limit.<br>
+          Only these <code>stardict.*</code> files (and a stale <code>stardict.syn</code>) are replaced — other files in the folder are left alone. If one of them is read-only, or the folder is not writable, the tool stops before any work and leaves the previous build as it was. <code>-m</code> works as in step 5, without the <code>.dic</code> size limit.<br>
           <strong>In one step:</strong> <code>linux/chain-kaikki-2-stardict confs/kaikki2stardict-pt-pt.config</code> builds the XDXF and the StarDict from the Kaikki dump (see the shared-config tab in step 4).
         </div>
       </div>

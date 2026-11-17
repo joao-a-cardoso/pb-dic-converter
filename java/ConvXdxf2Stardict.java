@@ -86,11 +86,12 @@ public class ConvXdxf2Stardict {
 		Path xdxfFile = fromStdin ? null : Path.of(inPath);
 
 		if (!fromStdin && !Files.exists(xdxfFile)) {
-			throw CliException.error(String.format("Error: input file not found: %s", xdxfFile));
+			throw CliException.error("Error: input file not found: %s", ArgsHelper.displayPath(xdxfFile.toString()));
 		}
 
 		MergeMode mergeDefs = argsHlp.requireParsed(MergeMode::parse,cli, "merge-defs", "--merge-defs/-m");
 		argsHlp.listProperties(cli);
+		checkReplaceable(Path.of(outDir)); // before any work
 
 		// 1. Parse XDXF
 		LOG.err("Parsing...");
@@ -166,6 +167,32 @@ public class ConvXdxf2Stardict {
 	}
 
 	// ── StarDict writer ───────────────────────────────────────────────────────
+
+	/**
+	 * Fails, before any work, when a previous build in {@code outPath} could not
+	 * be replaced: the folder is not writable, or one of its {@code stardict.*}
+	 * files is read-only. A read-only file was protected on purpose, and the tool
+	 * does not overrule that; the previous build is left unchanged. A folder that
+	 * does not exist yet is created later.
+	 */
+	static void checkReplaceable(Path outPath) {
+		if (!Files.isDirectory(outPath)) {
+			return;
+		}
+		String folder = ArgsHelper.displayPath(outPath.toString());
+		if (!Files.isWritable(outPath)) {
+			throw CliException.error("Error: the output folder %s is not writable; nothing was changed.", folder);
+		}
+		List<String> readOnly = STARDICT_EXTENSIONS.stream()
+				.map(ext -> outPath.resolve("stardict" + ext))
+				.filter(f -> Files.exists(f) && !Files.isWritable(f))
+				.map(f -> f.getFileName().toString())
+				.toList();
+		if (!readOnly.isEmpty()) {
+			throw CliException.error("Error: %s read-only in %s; the previous build was left unchanged.",
+					String.join(", ", readOnly) + (readOnly.size() == 1 ? " is" : " are"), folder);
+		}
+	}
 
 	/** Largest .dict: the .idx holds offsets as unsigned 32-bit numbers. */
 	static final long MAX_DICT_SIZE = 0xFFFF_FFFFL;

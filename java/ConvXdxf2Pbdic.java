@@ -93,10 +93,10 @@ public class ConvXdxf2Pbdic {
 		Path langDirPath = Path.of(langDir);
 
 		if (!fromStdin && !Files.exists(xdxfPath)) {
-			throw CliException.error(String.format("Error: input file not found: %s", xdxfPath));
+			throw CliException.error("Error: input file not found: %s", ArgsHelper.displayPath(xdxfPath.toString()));
 		}
 		if (!Files.isDirectory(langDirPath)) {
-			LOG.err(String.format("Error: language directory not found: %s", langDirPath));
+			LOG.err(String.format("Error: language directory not found: %s", ArgsHelper.displayPath(langDirPath.toString())));
 			LOG.raw("       Download from: https://github.com/Markismus/LanguageFilesPocketbookConverter");
 			throw new CliException(null, 1, false); // messages already logged
 		}
@@ -104,87 +104,92 @@ public class ConvXdxf2Pbdic {
 		MergeMode mergeDefs = argsHlp.requireParsed(MergeMode::parse, cli, "merge-defs", "--merge-defs/-m");
 		argsHlp.listProperties(cli);
 
-		// 1. Language files
-		var collation = loadCollation(langDirPath.resolve("collates.txt"));
-		byte[] morphem = readAsUtf16Le(langDirPath.resolve("morphems.txt"));
-		byte[] keyboard = Files.readAllBytes(langDirPath.resolve("keyboard.txt"));
-		LOG.err(String.format("Language files loaded. %d collation pairs.", collation.size()));
+		// the .dic is checked now (folder, permissions) and written only at the end,
+		// once everything succeeded (IoHelper.SafeOutput)
+		Files.createDirectories(dicFile.toAbsolutePath().getParent());
+		try (var dic = IoHelper.openSafeOutput(dicFile)) {
+			// 1. Language files
+			var collation = loadCollation(langDirPath.resolve("collates.txt"));
+			byte[] morphem = readAsUtf16Le(langDirPath.resolve("morphems.txt"));
+			byte[] keyboard = Files.readAllBytes(langDirPath.resolve("keyboard.txt"));
+			LOG.err(String.format("Language files loaded. %d collation pairs.", collation.size()));
 
-		// 2. Parse XDXF
-		LOG.err("Parsing...");
-		var header = new XdxfHeader[1];
-		var entries = new ArrayList<ParsedEntry>();
-		try (InputStream input = IoHelper.openInput(inPath)) {
-			int count = XdxfHelper.parseXdxf(input, //
-					ConvXdxf2Pbdic::htmlToSdic, //
-					hdr -> header[0] = hdr, //
-					entries::add);
-			LOG.err(String.format("read %d entries.", count));
-		}
-
-		// Use data from the header
-		if (header[0] != null) {
-			if (name == null || name.isBlank()) { // read the dict name from the header
-				name = header[0].name();
+			// 2. Parse XDXF
+			LOG.err("Parsing...");
+			var header = new XdxfHeader[1];
+			var entries = new ArrayList<ParsedEntry>();
+			try (InputStream input = IoHelper.openInput(inPath)) {
+				int count = XdxfHelper.parseXdxf(input, //
+						ConvXdxf2Pbdic::htmlToSdic, //
+						hdr -> header[0] = hdr, //
+						entries::add);
+				LOG.err(String.format("read %d entries.", count));
 			}
-		}
 
-		// there is no name, derive it from the output file name
-		if (name == null || name.isBlank()) {
-			name = ArgsHelper.baseName(outPath);
-		}
-
-		// 2b. A single definition too large for one block is truncated, ending with [...]
-		truncateOversized(entries);
-
-		// 3. Sort by collated headword
-		LOG.err("Sorting...");
-		sortByCollatedKey(entries, collation);
-
-		// 4. Merge/dedup headwords according to -m / --merge-defs (see MergeMode)
-		LOG.err("Merging duplicates...");
-		var merged = new ArrayList<ParsedEntry>(entries.size());
-		for (ParsedEntry e : entries) {
-			if (merged.isEmpty()) {
-				merged.add(e);
-				continue;
-			}
-			ParsedEntry prev = merged.getLast();
-			switch (mergeDefs.decide(prev.word(), prev.definition(), e.word(), e.definition())) {
-			case DIFFERENT, KEEP_BOTH -> merged.add(e);
-			case DROP -> { } // identical definition
-			case JOIN -> {
-				String keepWord = mergeDefs.keptWord(prev.word(), e.word());
-				byte[] joined = joinDefsBlankLine(prev.definition(), e.definition());
-				if (joined.length > maxDefinitionBytes(keepWord)) {
-					// merged entry would not fit in a block: start a new entry for this word;
-					// the following definitions are merged into it
-					LOG.err(String.format("Note: '%s' — merged definitions reached the block limit (%,d bytes): new entry started",
-							e.word(), maxDefinitionBytes(keepWord)));
-					merged.add(e);
-				} else {
-					merged.set(merged.size() - 1, new ParsedEntry(keepWord, joined));
+			// Use data from the header
+			if (header[0] != null) {
+				if (name == null || name.isBlank()) { // read the dict name from the header
+					name = header[0].name();
 				}
 			}
+
+			// there is no name, derive it from the output file name
+			if (name == null || name.isBlank()) {
+				name = ArgsHelper.baseName(outPath);
 			}
+
+			// 2b. A single definition too large for one block is truncated, ending with [...]
+			truncateOversized(entries);
+
+			// 3. Sort by collated headword
+			LOG.err("Sorting...");
+			sortByCollatedKey(entries, collation);
+
+			// 4. Merge/dedup headwords according to -m / --merge-defs (see MergeMode)
+			LOG.err("Merging duplicates...");
+			var merged = new ArrayList<ParsedEntry>(entries.size());
+			for (ParsedEntry e : entries) {
+				if (merged.isEmpty()) {
+					merged.add(e);
+					continue;
+				}
+				ParsedEntry prev = merged.getLast();
+				switch (mergeDefs.decide(prev.word(), prev.definition(), e.word(), e.definition())) {
+				case DIFFERENT, KEEP_BOTH -> merged.add(e);
+				case DROP -> { } // identical definition
+				case JOIN -> {
+					String keepWord = mergeDefs.keptWord(prev.word(), e.word());
+					byte[] joined = joinDefsBlankLine(prev.definition(), e.definition());
+					if (joined.length > maxDefinitionBytes(keepWord)) {
+						// merged entry would not fit in a block: start a new entry for this word;
+						// the following definitions are merged into it
+						LOG.err(String.format("Note: '%s' — merged definitions reached the block limit (%,d bytes): new entry started",
+								e.word(), maxDefinitionBytes(keepWord)));
+						merged.add(e);
+					} else {
+						merged.set(merged.size() - 1, new ParsedEntry(keepWord, joined));
+					}
+				}
+				}
+			}
+			int mergedCount = entries.size() - merged.size();
+			if (mergedCount > 0)
+				LOG.err(String.format("Merged/deduped %d entries (merge-defs=%s)", mergedCount, mergeDefs));
+			entries = merged;
+
+			// 5. Pack into blocks
+			LOG.err("Packing...");
+			var blocks = packBlocks(entries);
+			LOG.err(String.format("Packed. %d blocks.", blocks.size()));
+
+			// 5. Write .dic
+			LOG.err("Writing...");
+			writeDic(dic.stream(), name, entries.size(), collation, morphem, keyboard, blocks);
+			dic.commit();
+
+			LOG.err(String.format("%d entries written to %s.", entries.size(),
+					ArgsHelper.displayPath(dicFile.toString())));
 		}
-		int mergedCount = entries.size() - merged.size();
-		if (mergedCount > 0)
-			LOG.err(String.format("Merged/deduped %d entries (merge-defs=%s)", mergedCount, mergeDefs));
-		entries = merged;
-
-		// 5. Pack into blocks
-		LOG.err("Packing...");
-		var blocks = packBlocks(entries);
-		LOG.err(String.format("Packed. %d blocks.", blocks.size()));
-
-		// 5. Write .dic
-		LOG.err("Writing...");
-		if (dicFile.getParent() != null)
-			Files.createDirectories(dicFile.getParent());
-		writeDic(dicFile, name, entries.size(), collation, morphem, keyboard, blocks);
-
-		LOG.err(String.format("%d entries written to %s.", entries.size(), ArgsHelper.displayPath(dicFile.toString())));
 	}
 
 	// ── 1. Collation table ────────────────────────────────────────────────────
@@ -722,7 +727,7 @@ public class ConvXdxf2Pbdic {
 
 	// ── 6. .dic writer ────────────────────────────────────────────────────────
 
-	static void writeDic(Path out, String name, int entryCount, TreeMap<Integer, Integer> collation, byte[] morphem,
+	static void writeDic(OutputStream out, String name, int entryCount, TreeMap<Integer, Integer> collation, byte[] morphem,
 			byte[] keyboard, List<Block> blocks) throws IOException {
 
 		byte[] collBytes = collationToBytes(collation);
@@ -739,7 +744,7 @@ public class ConvXdxf2Pbdic {
 		byte[] header = buildHeader(entryCount, collationOffset, morphemOffset, keyboardOffset, indexOffset,
 				defblocksOffset, name);
 
-		try (var file = Files.newOutputStream(out); var os = new BufferedOutputStream(file)) {
+		try (var os = new BufferedOutputStream(out)) {
 			os.write(header);
 			os.write(collBytes);
 			os.write(morphBlock);

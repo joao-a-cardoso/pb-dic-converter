@@ -233,9 +233,9 @@ public class ArgsHelper {
 			Path path = Path.of(configPath);
 			if (!Files.exists(path)) {
 				if (exitWhenFailed) {
-					throw CliException.error("Error: config not found: %s", path);
+					throw CliException.error("Error: config not found: %s", displayPath(configPath));
 				}
-				log("Error: config not found: %s", path);
+				log("Error: config not found: %s", displayPath(configPath));
 				return props;
 			}
 			var defs = new LinkedHashMap<String, String>();
