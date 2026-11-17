@@ -42,4 +42,32 @@ public final class TextHelper {
 				.append(s, Character.charCount(first), s.length())
 				.toString();
 	}
+
+	/**
+	 * The kind of a word, judged by its spelling only (not its meaning), from the
+	 * most common to the least; see {@link #wordKind}.
+	 */
+	public enum WordKind {
+		/** Does not start with a capital: "casa", "selá", "iPhone". */
+		COMMON,
+		/** Starts with a capital: "Fausta", "Selá", "A", "PhD". */
+		NAME,
+		/** Two or more letters, none lowercase: "FUNASA", "A.K.A.". */
+		ACRONYM
+	}
+
+	/**
+	 * The kind of {@code word} by its spelling: {@link WordKind#ACRONYM} if it has
+	 * two or more letters and none is lowercase, else {@link WordKind#NAME} if its
+	 * first letter is a capital, else {@link WordKind#COMMON} (also for a word
+	 * without letters).
+	 */
+	public static WordKind wordKind(String word) {
+		if (word.codePoints().filter(Character::isLetter).count() >= 2
+				&& word.codePoints().noneMatch(Character::isLowerCase)) {
+			return WordKind.ACRONYM;
+		}
+		int first = word.codePoints().filter(Character::isLetter).findFirst().orElse('a');
+		return Character.isUpperCase(first) ? WordKind.NAME : WordKind.COMMON;
+	}
 }

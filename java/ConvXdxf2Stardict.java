@@ -125,6 +125,11 @@ public class ConvXdxf2Stardict {
 
 		// 3. Merge/dedup headwords according to -m / --merge-defs (see MergeMode)
 		LOG.err("Merging duplicates...");
+		int beforeMerge = entries.size();
+		int repeated = mergeDefs.dropRepeated(entries);
+		if (repeated > 0) {
+			LOG.err(String.format("Dropped %d repeated definitions (merge-defs=%s).", repeated, mergeDefs));
+		}
 		var merged = new ArrayList<ParsedEntry>(entries.size());
 		for (ParsedEntry e : entries) {
 			if (merged.isEmpty()) {
@@ -139,7 +144,7 @@ public class ConvXdxf2Stardict {
 					joinDefs(prev.definition(), e.definition())));
 			}
 		}
-		int mergedCount = entries.size() - merged.size();
+		int mergedCount = beforeMerge - merged.size();
 		if (mergedCount > 0) {
 			LOG.err(String.format("Merged/deduped %d entries (merge-defs=%s).", mergedCount, mergeDefs));
 		}

@@ -147,6 +147,10 @@ public class ConvXdxf2Pbdic {
 
 			// 4. Merge/dedup headwords according to -m / --merge-defs (see MergeMode)
 			LOG.err("Merging duplicates...");
+			int beforeMerge = entries.size();
+			int repeated = mergeDefs.dropRepeated(entries);
+			if (repeated > 0)
+				LOG.err(String.format("Dropped %d repeated definitions (merge-defs=%s)", repeated, mergeDefs));
 			var merged = new ArrayList<ParsedEntry>(entries.size());
 			for (ParsedEntry e : entries) {
 				if (merged.isEmpty()) {
@@ -172,7 +176,7 @@ public class ConvXdxf2Pbdic {
 				}
 				}
 			}
-			int mergedCount = entries.size() - merged.size();
+			int mergedCount = beforeMerge - merged.size();
 			if (mergedCount > 0)
 				LOG.err(String.format("Merged/deduped %d entries (merge-defs=%s)", mergedCount, mergeDefs));
 			entries = merged;
@@ -226,22 +230,25 @@ public class ConvXdxf2Pbdic {
 
 	/** Normalise a word for sorting: map codepoints, drop ignored (0). */
 	/**
-	 * Sorts {@code entries} by {@link #collatedKey}, in place. Each key is
-	 * computed once (not twice per comparison); the sort is stable, so entries
-	 * with the same key keep their order.
+	 * Sorts {@code entries} by {@link #collatedKey} (the order the PocketBook
+	 * index needs), then by the lower-case word, then by the word, in place: the
+	 * case variants of a word are next to each other, so that merging finds
+	 * them. Each key is computed once (not twice per comparison).
 	 */
 	static void sortByCollatedKey(List<ParsedEntry> entries, Map<Integer, Integer> collation) {
-		record Keyed(String key, ParsedEntry entry) {
+		record Keyed(String key, String lower, ParsedEntry entry) {
 		}
 		var keyed = new ArrayList<Keyed>(entries.size());
 		for (ParsedEntry e : entries) {
-			keyed.add(new Keyed(collatedKey(e.word(), collation), e));
+			keyed.add(new Keyed(collatedKey(e.word(), collation), lower(e.word()), e));
 		}
-		keyed.sort(Comparator.comparing(Keyed::key));
+		keyed.sort(Comparator.comparing(Keyed::key).thenComparing(Keyed::lower)
+				.thenComparing(k -> k.entry().word()));
 		for (int i = 0; i < keyed.size(); i++) {
 			entries.set(i, keyed.get(i).entry());
 		}
 	}
+
 
 	static String collatedKey(String word, Map<Integer, Integer> collation) {
 		var sb = new StringBuilder();

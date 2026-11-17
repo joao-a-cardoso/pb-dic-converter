@@ -166,6 +166,10 @@ Outputs are all or nothing (every converter: `kaikki-2-tab`, `stardict-2-tab`, `
 - `EXACT` — case-sensitive headword match; merge different definitions, drop identical ones
 - `NEVER` — never merge; only drop byte-identical duplicates
 
+Before merging, a definition repeated for the same headword (compared as the mode compares headwords) is kept only once, wherever the copies are: the first in sorted order stays (`Dropped <n> repeated definitions`). Entries are sorted so that the case variants of a word are next to each other (`xdxf-2-pbdic`: by the collation key, then the lower-case word, then the word).
+
+With `ALWAYS`, a merged entry is named after its most common spelling: a common word before a name, a name before an acronym (judged by the spelling only: `casa`, `Fausta`, `FUNASA`), then the one with fewer capitals — `Fausta` + `fausta` → `fausta`, `CASA` + `casa` → `casa`. The same applies when a repeated definition is dropped (`Selá` + `selá` with the same definition → `selá`), except that an acronym keeps its capitals (`FUNASA` + `funasa` with the same definition → `FUNASA`).
+
 PocketBook `.dic` size limit (`xdxf-2-pbdic` only — StarDict has no such limit): an entry must fit in one `.dic` block (27,000 bytes, the firmware's decompression buffer).
 - Merging stops when the next definition would not fit: it starts a new entry with the same headword, and the following definitions are merged into that one (`Note: '<word>' — merged definitions reached the block limit …`).
 - A single definition that is too large on its own is truncated at a line or word boundary and ends with `[...]` (`Warning: definition of '<word>' is … bytes … truncated`). In the Kaikki 2026-11 data this only affects *sistema*.
