@@ -1,0 +1,415 @@
+<!doctype html>
+<!--
+  Source of docs/toolchain-design-reference.pdf. To rebuild the PDF (A4), from the project root:
+    chromium --headless --no-pdf-header-footer \
+      --print-to-pdf=docs/toolchain-design-reference.pdf docs/src/toolchain-design-reference.html
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PocketBook Dictionary Toolchain — Design Reference</title>
+<style>
+  @page { size: A4; margin: 14mm 16mm 14mm 16mm; }
+  :root { --ink: #1d2433; --muted: #5b6475; --line: #c9d3e3; --navy: #1e2b47; --blue: #4a7fb5; --soft: #eef3fa; --code: #f4f7fb; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-family: "Liberation Sans", "Helvetica", "Arial", sans-serif; color: var(--ink); font-size: 9.9pt; line-height: 1.4; margin: 0; }
+  code, pre, .mono { font-family: "Liberation Mono", "DejaVu Sans Mono", monospace; font-size: 0.9em; }
+  h1, h2, h3 { color: var(--navy); line-height: 1.2; }
+  h2 { font-size: 13.5pt; border-bottom: 1px solid var(--line); padding-bottom: 3px; margin: 18px 0 8px; break-after: avoid; }
+  h3 { font-size: 11pt; color: #2d5d93; margin: 12px 0 4px; break-after: avoid; }
+  p { margin: 0 0 7px; text-align: justify; }
+  ul { margin: 0 0 7px; padding-left: 18px; }
+  li { margin: 2px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 4px 0 10px; font-size: 9.4pt; break-inside: avoid; }
+  th, td { border: 1px solid var(--line); padding: 4px 7px; text-align: left; vertical-align: top; }
+  th { background: var(--navy); color: #fff; font-weight: 600; }
+  td:first-child { font-weight: 600; width: 24%; background: var(--soft); }
+  table.plain td:first-child { font-weight: normal; background: none; width: auto; }
+  pre { background: var(--code); border: 1px solid var(--line); padding: 7px 9px; white-space: pre-wrap; margin: 4px 0 10px; font-size: 8.6pt; line-height: 1.4; break-inside: avoid; }
+  .chapter { break-before: page; }
+  .banner { background: var(--navy); color: #fff; border-radius: 6px; overflow: hidden; margin-bottom: 14px; }
+  .banner::before { content: ""; display: block; height: 7px; background: var(--blue); }
+  .banner .in { padding: 14px 20px 16px; }
+  .banner .name { font-family: "Liberation Mono", monospace; font-size: 19pt; font-weight: 700; }
+  .banner .sub { color: #a9c3e4; margin-top: 3px; }
+  .cover { height: 245mm; display: flex; flex-direction: column; }
+  .cover .banner .in { padding: 34px 32px 30px; }
+  .cover h1 { color: #fff; font-size: 27pt; margin: 0 0 6px; }
+  .cover .sub { font-size: 13pt; }
+  .cover .tools { margin: 26px 0 10px; font-family: "Liberation Mono", monospace; font-size: 11.5pt; line-height: 1.9; color: #dfe8f5; }
+  .cover .tag { color: #8fb0d8; font-style: italic; font-size: 9pt; margin-top: 18px; }
+  .note { border-left: 3px solid var(--blue); background: var(--soft); padding: 6px 10px; margin: 6px 0 10px; font-size: 9.6pt; break-inside: avoid; }
+  .toc td:first-child { width: 22%; } .toc td:nth-child(2) { width: 33%; }
+</style>
+</head>
+<body>
+
+<!-- Cover -->
+<div class="cover">
+  <div class="banner"><div class="in">
+    <h1>PocketBook Dictionary Toolchain</h1>
+    <div class="sub">Tool Design Reference</div>
+    <div class="tools">kaikki-2-tab<br>stardict-2-tab<br>tab-2-xdxf<br>xdxf-2-pbdic<br>xdxf-2-stardict<br>check-pbdic<br>chain-* scripts</div>
+    <div class="tag">Requirements · Design Choices · Program Structure — November 2026</div>
+  </div></div>
+  <p>This document describes the design, requirements and program structure of the tools that convert Kaikki (Wiktionary) and StarDict dictionaries into PocketBook's native <b>.dic</b> (SDIC) format and into StarDict files for KOReader. Each tool is one Java 25 source file in <code>java/</code>, run without a compilation step through a thin bash wrapper in <code>linux/</code>; what the tools have in common lives in <code>java/shared/</code>.</p>
+  <p>Usage details (every option, with examples) are printed by each tool with <code>-h</code>; the README and <code>pocketbook-dict-guide.html</code> explain how to build a dictionary step by step; <code>docs/architecture.html</code> shows the structure in diagrams; <code>docs/sdic_format.pdf</code> describes the binary .dic format.</p>
+  <table class="toc">
+    <tr><th>Chapter</th><th>Implemented by</th><th>Contents</th></tr>
+    <tr><td>Common design</td><td><code>java/shared/*.java</code>, <code>linux/runjava</code></td><td>Runtime, command line and config files, output, errors, the shared library</td></tr>
+    <tr><td>kaikki-2-tab</td><td><code>java/ConvKaikki2Tab.java</code></td><td>Kaikki JSONL → TSV</td></tr>
+    <tr><td>stardict-2-tab</td><td><code>java/ConvStardict2Tab.java</code></td><td>StarDict → TSV</td></tr>
+    <tr><td>tab-2-xdxf</td><td><code>java/ConvTab2Xdxf.java</code></td><td>TSV → validated XDXF</td></tr>
+    <tr><td>xdxf-2-pbdic</td><td><code>java/ConvXdxf2Pbdic.java</code></td><td>XDXF → PocketBook .dic</td></tr>
+    <tr><td>xdxf-2-stardict</td><td><code>java/ConvXdxf2Stardict.java</code></td><td>XDXF → StarDict files</td></tr>
+    <tr><td>check-pbdic</td><td><code>java/CheckPbdic.java</code></td><td>Testing tool: a .dic checked against its XDXF</td></tr>
+    <tr><td>chain-* scripts</td><td><code>linux/chain-*</code>, <code>linux/library.sh</code></td><td>Several steps from one config file</td></tr>
+  </table>
+</div>
+
+<!-- Common design -->
+<div class="chapter">
+  <div class="banner"><div class="in"><div class="name">Common design</div><div class="sub">What every tool shares<div class="sub mono" style="color:#dfe8f5;margin-top:6px">java/shared/*.java · linux/runjava</div></div></div></div>
+
+  <h2>Pipeline</h2>
+  <pre>Kaikki .jsonl[.gz]        ── kaikki-2-tab ───┐
+                                             ├──► TSV ── tab-2-xdxf ──► XDXF
+StarDict .ifo .idx .dict  ── stardict-2-tab ─┘
+
+XDXF        ── xdxf-2-pbdic ─────► .dic        (PocketBook)
+XDXF        ── xdxf-2-stardict ──► stardict.*  (KOReader)
+XDXF + .dic ── check-pbdic ──────► report      (testing)</pre>
+  <p>Every source becomes TSV (<code>word⇥definition</code>, definitions in HTML), and TSV becomes XDXF, so a new source only needs a new <code>*-2-tab</code> converter, and every back end reads the same XDXF.</p>
+
+  <h2>Runtime</h2>
+  <table>
+    <tr><td>Java</td><td>JDK 25 or later, <code>java</code> on the PATH (source-file mode: no build step, no external libraries)</td></tr>
+    <tr><td>Launch</td><td><code>linux/&lt;tool&gt;</code> calls <code>linux/runjava &lt;Class&gt;.java</code>, which runs <code>java --source 25 java/&lt;Class&gt;.java</code>; it finds <code>java/</code> relative to itself, so the tools run from any folder</td></tr>
+    <tr><td>Sources</td><td><code>java/Conv*.java</code>, <code>java/CheckPbdic.java</code> (one class per tool) and <code>java/shared/*.java</code></td></tr>
+  </table>
+
+  <h2>Command line and config files</h2>
+  <ul>
+    <li><b>Options</b> have a short and a long form (<code>-i / --in</code>); <code>-</code> as a file name is stdin or stdout where the help says so; <code>-h / --help</code> prints the usage to stdout and exits 0.</li>
+    <li><b>Config file</b> (<code>-c / --config</code>): a <code>.properties</code> file; each tool reads only the keys of its own namespace (<code>kaikki2tab.*</code>, <code>stardict2tab.*</code>, <code>tab2xdxf.*</code>, <code>xdxf2pbdic.*</code>, <code>xdxf2stardict.*</code>, <code>checkpbdic.*</code>), so one file can drive several tools. Command-line options override it. Unknown keys of the tool's namespace are reported.</li>
+    <li><b>Variables</b>: <code>def &lt;name&gt;=&lt;value&gt;</code> lines define variables used as <code>$name</code> or <code>${name}</code> (<code>$$</code> is a literal <code>$</code>); <code>--def &lt;name&gt;=&lt;value&gt;</code> sets or overrides one from the command line (repeatable).</li>
+    <li><b>Configuration listing</b>: before working, each tool lists the values it uses and where each came from (command line, config, default) on stderr.</li>
+    <li><b>Typed values</b> are checked when read: languages are ISO 639-1 codes, booleans are <code>true</code>/<code>false</code>, enums (<code>-m</code>, <code>-e</code>) accept their names in any case; the listing shows the normalised value.</li>
+  </ul>
+  <pre># confs/kaikki2xdxf-pt-pt.config (excerpt)
+def version=2026-11
+def lang=pt
+kaikki2tab.in=data/kaikki/kaikki.org-all-to-Portuguese.jsonl.gz
+kaikki2tab.out=-
+kaikki2tab.lang=$lang
+tab2xdxf.in=-
+tab2xdxf.out=data/out/kaikki-pt-pt-${version}.xdxf</pre>
+
+  <h2>Output: all or nothing</h2>
+  <p>Every converter writes through <code>IoHelper.SafeOutput</code>: the output is kept in memory, compressed (about 1/8 of its size for dictionary text), and reaches the file or stdout only on <code>commit()</code>, after everything succeeded. On any error an existing output file keeps its old contents and a pipe receives nothing, so the next tool fails on an empty input instead of converting half a dictionary. The target is checked when it is opened (folder exists, file or folder writable), so a wrong path fails before the work. Only an I/O error during the final write itself (e.g. a full disk) can leave a partial file.</p>
+
+  <h2>Messages, errors and exit codes</h2>
+  <ul>
+    <li>Data goes to stdout only through <code>SafeOutput</code>; everything people read (listing, progress, warnings, errors) goes to stderr as <code>tool: message</code> (<code>ToolLog</code>), so pipes carry data only.</li>
+    <li><code>ToolRunner</code> is the only place that ends a program: normal end → 0; help → 0; a usage or input error (<code>CliException</code>) → its message (and the usage, if useful) and 1; a file error such as a read-only or missing file → one line, e.g. <code>tool: Error: out.dic: permission denied</code>, and 1; any other exception is a bug → message and stack trace, 1.</li>
+  </ul>
+
+  <h2>The shared library (<code>java/shared</code>)</h2>
+  <table>
+    <tr><th>Class</th><th>Job</th></tr>
+    <tr><td>ToolRunner · CliException · ToolLog</td><td>Running a tool, error reporting and exit codes, messages to stderr</td></tr>
+    <tr><td>ArgsHelper</td><td>Option parsing, config namespaces, <code>def</code> / <code>--def</code> variables, the configuration listing; <code>resolve…</code> (optional, with default) and <code>require…</code> (mandatory) per type</td></tr>
+    <tr><td>IoHelper · IoHelper.SafeOutput</td><td><code>openInput</code> (file, <code>.gz</code>, stdin), <code>openOutput</code>, <code>openSafeOutput</code> (all-or-nothing output)</td></tr>
+    <tr><td>DictzipHelper</td><td><code>.dict.dz</code> writer (<code>openCompressor</code>), chunk by chunk, seekable by StarDict readers</td></tr>
+    <tr><td>XdxfHelper</td><td>XDXF parsing (SAX), writing (<code>openXdxfWriter</code>) and validation</td></tr>
+    <tr><td>XmlHelper</td><td>HTML cleaning to a tag whitelist, entity handling</td></tr>
+    <tr><td>MergeMode</td><td>The <code>-m / --merge-defs</code> modes for duplicate headwords (both XDXF back ends)</td></tr>
+    <tr><td>JsonParser · JsonException</td><td>Strict JSON parser for Kaikki lines, errors with position</td></tr>
+    <tr><td>LangHelper · TermTranslator</td><td>ISO 639-1 → ISO 639-2 codes for XDXF; label translations from <code>.properties</code></td></tr>
+    <tr><td>TextHelper · Constants</td><td>Locale-independent case changes; <code>wordKind</code> (COMMON / NAME / ACRONYM by spelling); shared constants</td></tr>
+  </table>
+</div>
+
+<!-- kaikki-2-tab -->
+<div class="chapter">
+  <div class="banner"><div class="in"><div class="name">kaikki-2-tab</div><div class="sub">Kaikki JSONL Wiktionary extractor — .jsonl / .jsonl.gz → TSV<div class="sub mono" style="color:#dfe8f5;margin-top:6px">java/ConvKaikki2Tab.java · class ConvKaikki2Tab · run by linux/kaikki-2-tab</div></div></div></div>
+  <h2>Overview</h2>
+  <p><b>kaikki-2-tab</b> reads the Kaikki.org JSONL data (Wiktionary extracted to one JSON object per line and headword) and writes a TSV for <b>tab-2-xdxf</b>. It keeps the entries of one headword language and builds an HTML definition for each, with labels translated into the definitions' language.</p>
+  <h2>Requirements</h2>
+  <table>
+    <tr><td>Implemented by</td><td><code>java/ConvKaikki2Tab.java</code> (class <code>ConvKaikki2Tab</code>), launched by <code>linux/kaikki-2-tab</code></td></tr>
+    <tr><td>Input</td><td>Kaikki <code>.jsonl</code> or <code>.jsonl.gz</code> (by extension)</td></tr>
+    <tr><td>Output</td><td>UTF-8 TSV: <code>word⇥HTML definition</code>, one entry per line; file or stdout</td></tr>
+    <tr><td>Label translations</td><td><code>java/term-translations_&lt;lang&gt;.properties</code> by default, or <code>--terms-file</code></td></tr>
+    <tr><td>Config namespace</td><td><code>kaikki2tab.*</code></td></tr>
+  </table>
+  <h2>CLI Interface</h2>
+  <pre>kaikki-2-tab -i &lt;jsonl[.gz]&gt; -o &lt;tsv|-&gt; -l &lt;lang&gt;
+             [-e / --embedded-defs KEEP|SEPARATE|BOTH] [--terms-file &lt;file&gt;]
+             [-c &lt;config&gt;] [--def &lt;name&gt;=&lt;value&gt; ...]</pre>
+  <h2>Design Choices</h2>
+  <h3>Language filtering</h3>
+  <p><code>-l</code> takes one ISO 639-1 code; lines whose <code>lang_code</code> differs are skipped first, before the rest of the entry is used. The count of skipped lines and their languages is logged.</p>
+  <h3>Definition structure</h3>
+  <p><code>buildDefinition()</code> builds the HTML in a fixed order: part of speech and gender (bold title); plural forms (nouns only); pronunciation; numbered senses with domain labels (from <code>topics</code>, else <code>raw_tags</code>) and usage examples; etymology; expressions. Form-of entries (conjugations, plurals) get a short definition; verbs do not list their conjugated forms; entries without senses are skipped.</p>
+  <h3>Expressions — <code>--embedded-defs</code></h3>
+  <ul>
+    <li><b>BOTH</b> (default) — expressions appear inside the parent entry and also as their own entries, for direct lookup.</li>
+    <li><b>KEEP</b> — only inside the parent entry.</li>
+    <li><b>SEPARATE</b> — only as their own entries. An expression is not emitted on its own when a regular entry with the same headword exists.</li>
+  </ul>
+  <h3>Label translations</h3>
+  <p>Labels such as <i>Etymology</i>, <i>feminine</i> or domain topics (<i>Botany</i>) are translated with a <code>.properties</code> file (<code>english-term=translation</code>, case-insensitive). The file used is logged; a missing default file leaves the labels in English. For dictionaries whose definitions are in another language than the headwords, <code>--terms-file</code> should point to the definitions' language (as <code>confs/kaikki2xdxf-en-pt.config</code> does).</p>
+  <h3>Wiki markup and TSV safety</h3>
+  <p><code>stripWiki()</code> resolves <code>[[word]]</code> and <code>[[word|display]]</code> links and removes stray brackets; <code>sanitize()</code> collapses embedded newlines and tabs so every entry stays one TSV line.</p>
+  <h3>Duplicates and errors</h3>
+  <p>Identical lines (same headword and definition) are written once: <code>SeenLines</code> keeps a 128-bit hash of each line instead of the line itself, to save memory. A malformed JSON line is reported with its line number and skipped; any other error stops the run.</p>
+  <h2>Program Structure — <code>ConvKaikki2Tab</code></h2>
+  <ul>
+    <li><b>run()</b> — options, config, stream loop over the lines, output, statistics</li>
+    <li><b>EmbeddedDefs</b> — the <code>-e</code> modes as an enum (embedded, separate)</li>
+    <li><b>buildDefinition()</b> · <b>prepareExpressionsToEmit()</b> — HTML definition of an entry; its expressions as separate entries</li>
+    <li><b>extractGloss()</b> · <b>buildExampleText()</b> · <b>buildSoundsMap()</b> · <b>buildDomainText()</b> — parts of a definition</li>
+    <li><b>loadTermTranslations()</b> · <b>translateTerm()</b> — label translations (<code>TermTranslator</code>)</li>
+    <li><b>stripWiki()</b> · <b>sanitize()</b> — wiki links, TSV safety</li>
+    <li><b>SeenLines</b> — hashed set of the lines written</li>
+  </ul>
+</div>
+
+<!-- stardict-2-tab -->
+<div class="chapter">
+  <div class="banner"><div class="in"><div class="name">stardict-2-tab</div><div class="sub">StarDict dictionary reader — .ifo / .idx / .dict[.dz] → TSV<div class="sub mono" style="color:#dfe8f5;margin-top:6px">java/ConvStardict2Tab.java · class ConvStardict2Tab · run by linux/stardict-2-tab</div></div></div></div>
+  <h2>Overview</h2>
+  <p><b>stardict-2-tab</b> reads a StarDict dictionary (<code>.ifo</code> + <code>.idx</code> + <code>.dict.dz</code> or <code>.dict</code>) and writes a TSV with one entry per line for <b>tab-2-xdxf</b>.</p>
+  <h2>Requirements</h2>
+  <table>
+    <tr><td>Implemented by</td><td><code>java/ConvStardict2Tab.java</code> (class <code>ConvStardict2Tab</code>), launched by <code>linux/stardict-2-tab</code></td></tr>
+    <tr><td>Input</td><td>StarDict <code>.ifo</code>; the <code>.idx</code> and <code>.dict.dz</code> (or <code>.dict</code>) with the same name in the same folder</td></tr>
+    <tr><td>Output</td><td>UTF-8 TSV: <code>word⇥definition</code>; file or stdout</td></tr>
+    <tr><td>Config namespace</td><td><code>stardict2tab.*</code></td></tr>
+  </table>
+  <h2>CLI Interface</h2>
+  <pre>stardict-2-tab -i &lt;input.ifo&gt; -o &lt;tsv|-&gt; [-c &lt;config&gt;] [--def &lt;name&gt;=&lt;value&gt; ...]</pre>
+  <h2>Design Choices</h2>
+  <h3>Sidecar file discovery</h3>
+  <p>The <code>.idx</code> and dictionary files are found from the <code>.ifo</code> path; <code>.dict.dz</code> is preferred when both exist. A missing file is reported by name.</p>
+  <h3>Strict <code>.ifo</code> check</h3>
+  <p>The first line must be <code>StarDict's dict ifo file</code>; anything else is a clear error (<code>CliException</code>) instead of a confusing failure later.</p>
+  <h3>Reading by index</h3>
+  <p>The <code>.idx</code> is read as <code>word\0</code> + 4-byte offset + 4-byte size (big-endian). For a <code>.dict.dz</code>, only the bytes the index refers to are decompressed, straight into one array of that size, and the rest of the stream is read so the gzip checksum is still verified; a truncated file is reported.</p>
+  <h3>TSV line normalisation</h3>
+  <p>Newlines and tabs inside definitions become spaces, so each entry is exactly one line with one tab. HTML is kept as is for tab-2-xdxf.</p>
+  <h2>Program Structure — <code>ConvStardict2Tab</code></h2>
+  <ul>
+    <li><b>run()</b> — options, config, read, write the TSV through <code>SafeOutput</code></li>
+    <li><b>readStarDict()</b> — parses the <code>.ifo</code>, reads the <code>.idx</code> into <code>RawEntry</code>s, decompresses the dictionary and resolves the definitions</li>
+    <li><b>RawEntry</b> (word, offset, size) · <b>Entry</b> (word, definition) — records</li>
+  </ul>
+</div>
+
+<!-- tab-2-xdxf -->
+<div class="chapter">
+  <div class="banner"><div class="in"><div class="name">tab-2-xdxf</div><div class="sub">TSV to XDXF converter — produces validated XML<div class="sub mono" style="color:#dfe8f5;margin-top:6px">java/ConvTab2Xdxf.java · class ConvTab2Xdxf · run by linux/tab-2-xdxf</div></div></div></div>
+  <h2>Overview</h2>
+  <p><b>tab-2-xdxf</b> reads a TSV dictionary (from kaikki-2-tab or stardict-2-tab) and writes a well-formed XDXF file, the common input of <b>xdxf-2-pbdic</b> and <b>xdxf-2-stardict</b>. It cleans the HTML definitions and validates the result with Java's SAX parser.</p>
+  <h2>Requirements</h2>
+  <table>
+    <tr><td>Implemented by</td><td><code>java/ConvTab2Xdxf.java</code> (class <code>ConvTab2Xdxf</code>), launched by <code>linux/tab-2-xdxf</code></td></tr>
+    <tr><td>Input</td><td>UTF-8 TSV <code>word⇥HTML definition</code>, file or stdin; blank lines and lines starting with <code>#</code> are ignored, lines without a tab are reported and skipped</td></tr>
+    <tr><td>Output</td><td>UTF-8 XDXF, one <code>&lt;ar&gt;</code> per entry; file or stdout</td></tr>
+    <tr><td>Validation</td><td>SAX parse of the output before it is written (default on)</td></tr>
+    <tr><td>Config namespace</td><td><code>tab2xdxf.*</code></td></tr>
+  </table>
+  <h2>CLI Interface</h2>
+  <pre>tab-2-xdxf -i &lt;tsv|-&gt; -o &lt;xdxf|-&gt; -l &lt;lang&gt; -n &lt;name&gt;
+           [-t / --lang-to &lt;lang&gt;] [--desc &lt;text&gt;] [-v / --validate true|false]
+           [-c &lt;config&gt;] [--def &lt;name&gt;=&lt;value&gt; ...]</pre>
+  <h2>Design Choices</h2>
+  <h3>HTML cleaning (<code>XmlHelper.cleanHtml</code>)</h3>
+  <ul>
+    <li>Only whitelisted tags are kept, without attributes: <code>p b i u em strong big small ol ul li sub sup br a div span table tr td th</code>; other tags are dropped, keeping their text.</li>
+    <li>Void elements (<code>br</code>, <code>hr</code>, <code>img</code>) are self-closed; unbalanced tags are fixed.</li>
+    <li>Common HTML entities become characters; bare <code>&amp;</code> and <code>&lt;</code> are escaped.</li>
+  </ul>
+  <h3>Language codes</h3>
+  <p>XDXF needs three-letter codes in <code>lang_from</code> / <code>lang_to</code>; <code>LangHelper</code> maps the ISO 639-1 codes given with <code>-l</code> and <code>-t</code> (default: the headword language).</p>
+  <h3>Validation without temporary files</h3>
+  <p>The XDXF is written entry by entry into a <code>SafeOutput</code> (no list of entries in memory). With validation on, the compressed in-memory output is read back and parsed; only if it is valid is it written to the file or stdout. On failure nothing is written and the tool exits with 1. This works the same for a file and for stdout.</p>
+  <h2>Program Structure — <code>ConvTab2Xdxf</code></h2>
+  <ul>
+    <li><b>run()</b> — options, config, the XDXF header, write, validate, commit</li>
+    <li><b>readTabfile()</b> — TSV reader feeding the XDXF writer line by line</li>
+    <li><code>XdxfHelper.openXdxfWriter</code> / <code>XdxfWriter</code> — XDXF header, <code>&lt;ar&gt;</code> entries (cleaned HTML), footer</li>
+    <li><code>XdxfHelper.validateXdxf</code> — SAX well-formedness check</li>
+  </ul>
+</div>
+
+<!-- xdxf-2-pbdic -->
+<div class="chapter">
+  <div class="banner"><div class="in"><div class="name">xdxf-2-pbdic</div><div class="sub">XDXF to PocketBook SDIC converter — produces native .dic files<div class="sub mono" style="color:#dfe8f5;margin-top:6px">java/ConvXdxf2Pbdic.java · class ConvXdxf2Pbdic · run by linux/xdxf-2-pbdic</div></div></div></div>
+  <h2>Overview</h2>
+  <p><b>xdxf-2-pbdic</b> reads an XDXF dictionary and writes a PocketBook-native <b>.dic</b>: a sorted, indexed binary with the collation table, the morpheme and keyboard language data, a word index and zlib-compressed definition blocks. The binary format is described in <code>docs/sdic_format.pdf</code>.</p>
+  <h2>Requirements</h2>
+  <table>
+    <tr><td>Implemented by</td><td><code>java/ConvXdxf2Pbdic.java</code> (class <code>ConvXdxf2Pbdic</code>), launched by <code>linux/xdxf-2-pbdic</code></td></tr>
+    <tr><td>Input</td><td>XDXF file or stdin</td></tr>
+    <tr><td>Output</td><td>PocketBook <code>.dic</code> (SDIC)</td></tr>
+    <tr><td>Language files</td><td><code>collates.txt</code>, <code>morphems.txt</code>, <code>keyboard.txt</code> in <code>lang/&lt;lang&gt;</code> or <code>-D</code> (from github.com/Markismus/LanguageFilesPocketbookConverter)</td></tr>
+    <tr><td>Required</td><td><code>--in</code>, <code>--out</code>, <code>--lang</code>, <code>--merge-defs</code></td></tr>
+    <tr><td>Config namespace</td><td><code>xdxf2pbdic.*</code></td></tr>
+  </table>
+  <h2>CLI Interface</h2>
+  <pre>xdxf-2-pbdic -i &lt;xdxf|-&gt; -o &lt;dic&gt; -l &lt;lang&gt; -m ALWAYS|EXACT|NEVER
+             [-D / --langdir &lt;dir&gt;] [-n / --name &lt;title&gt;]
+             [-c &lt;config&gt;] [--def &lt;name&gt;=&lt;value&gt; ...]</pre>
+  <h2>Processing steps</h2>
+  <ol>
+    <li><b>Language files</b> — collation map, morphemes (UTF-16 LE, uppercased), keyboard (verbatim).</li>
+    <li><b>Parse XDXF</b> — SAX; each definition is converted to SDIC bytes (<code>htmlToSdic</code>); an <code>&lt;ar&gt;</code> with several <code>&lt;k&gt;</code> gives one entry per headword; entries with an empty definition are skipped. The title comes from <code>-n</code>, else the XDXF header, else the file name.</li>
+    <li><b>Oversized definitions</b> — a definition that does not fit in one block on its own is cut and ends with <code>[...]</code>.</li>
+    <li><b>Sort</b> — by collation key, then lowercase word, then word.</li>
+    <li><b>Merge</b> — repeated definitions dropped, then duplicate headwords merged according to <code>-m</code>.</li>
+    <li><b>Pack</b> into blocks, <b>build the index</b>, <b>write</b> the file.</li>
+  </ol>
+  <h2>Design Choices</h2>
+  <h3>--merge-defs (mandatory)</h3>
+  <p>There is no default, forcing an explicit choice (<code>MergeMode</code>):</p>
+  <ul>
+    <li><b>ALWAYS</b> — headwords that differ only in case are the same headword; different definitions are joined into one entry, separated by a blank line (<code>0x0A 0x20 0x0A</code>).</li>
+    <li><b>EXACT</b> — case-sensitive headword match; different definitions of the exact same headword are joined.</li>
+    <li><b>NEVER</b> — nothing is joined.</li>
+  </ul>
+  <p>In every mode, a definition repeated for the same headword is kept only once, wherever its copies are. With ALWAYS the joined entry is named after its most common spelling: a common word before a name before an acronym (<code>TextHelper.wordKind</code>, by spelling only), then fewer capitals — <code>Fausta</code> + <code>fausta</code> → <code>fausta</code>; a repeated definition of an acronym keeps its capitals (<code>FUNASA</code> + <code>funasa</code> → <code>FUNASA</code>).</p>
+  <h3>Block size limits</h3>
+  <p>An entry must fit in one block, whose decompressed size is limited by the firmware's buffer:</p>
+  <ul>
+    <li>A single definition too large on its own is cut at a newline or a space, never inside a word or a bold/italic span, and ends with <code>[...]</code>; it is logged as a warning.</li>
+    <li>A join whose result would not fit is not done: the definition stays a separate entry with the same headword, and the following definitions join that one if they fit. Nothing is cut because of a join; it is logged as a note.</li>
+  </ul>
+  <h3>Block packing</h3>
+  <pre>TARGET_BLOCK_COMPRESSED   = 4_096   // compressed size, as converter.exe
+TARGET_BLOCK_DECOMPRESSED = 27_000  // hard ceiling on the decompressed size (firmware buffer)
+TARGET_BLOCK_ENTRIES      = 110     // entries per block: keeps the index under ~55,000 bytes</pre>
+  <p>A block is closed before the entry that would break one of its limits: more than 110 entries, more than 27,000 bytes decompressed (with the 2-byte terminator), or — once over 3,000 bytes — more than 4,096 bytes compressed. The compressed size is measured only when it could be over the limit (<code>maxDeflateGrowth</code> bounds how much it can grow per added byte), with one reused <code>Deflater</code>; the blocks are the same as when measuring after every entry, only faster.</p>
+  <h3>SDIC definition encoding rules</h3>
+  <p>The firmware requires strict spacing around the format bytes (<code>0x02</code> bold, <code>0x03</code> italic, <code>0x01</code> end of span, <code>0x0A</code> newline); a post-processing pass enforces them on every definition:</p>
+  <ul>
+    <li>a definition starts and ends with <code>0x20</code>;</li>
+    <li><code>0x01</code> is followed by <code>0x20</code>; <code>0x0A</code> is preceded by <code>0x20</code> and followed by exactly one;</li>
+    <li><code>0x02</code> and <code>0x03</code> are preceded and followed by <code>0x20</code>.</li>
+  </ul>
+  <h3>Collation table</h3>
+  <p><code>collates.txt</code> is parsed into a map from source code point to normalised code point; its first line lists the ignored characters (mapped to 0), the following lines are <code>chars=BASE</code>. The map drives the sort order and is written to the .dic uncompressed: a <code>uint32</code> byte count, then one little-endian <code>uint32</code> per pair (source code point in the low half, normalised one in the high half), sorted by source; identity mappings are left out.</p>
+  <h2>Program Structure — <code>ConvXdxf2Pbdic</code></h2>
+  <ul>
+    <li><b>run()</b> — options, config, the steps above, output through <code>SafeOutput</code></li>
+    <li><b>loadCollation()</b> · <b>collatedKey()</b> · <b>sortByCollatedKey()</b> · <b>collationToBytes()</b> — collation</li>
+    <li><b>htmlToSdic()</b> · <b>trimBytes()</b> — HTML to SDIC bytes, spacing rules</li>
+    <li><b>maxDefinitionBytes()</b> · <b>truncateOversized()</b> · <b>truncateDefinition()</b> — the block-size rule for one definition</li>
+    <li><b>joinDefsBlankLine()</b> — joins two definitions; <code>MergeMode.dropRepeated()</code> / <code>decide()</code> / <code>keptWord()</code> drive the merge</li>
+    <li><b>packBlocks()</b> · <b>PendingBlock</b> · <b>maxDeflateGrowth()</b> — block packer</li>
+    <li><b>buildIndex()</b> · <b>writeDic()</b> — index (with its <code>0x0000</code> terminator) and the file</li>
+    <li><b>readAsUtf16Le()</b> — morphemes block</li>
+  </ul>
+</div>
+
+<!-- xdxf-2-stardict -->
+<div class="chapter">
+  <div class="banner"><div class="in"><div class="name">xdxf-2-stardict</div><div class="sub">XDXF to StarDict converter — for KOReader and other StarDict readers<div class="sub mono" style="color:#dfe8f5;margin-top:6px">java/ConvXdxf2Stardict.java · class ConvXdxf2Stardict · run by linux/xdxf-2-stardict</div></div></div></div>
+  <h2>Overview</h2>
+  <p><b>xdxf-2-stardict</b> reads an XDXF dictionary and writes a StarDict dictionary into a folder: <code>stardict.ifo</code>, <code>stardict.idx</code> and <code>stardict.dict.dz</code> (or an uncompressed <code>stardict.dict</code>). Definitions are stored as HTML (<code>sametypesequence=h</code>), keeping the markup made by tab-2-xdxf.</p>
+  <h2>Requirements</h2>
+  <table>
+    <tr><td>Implemented by</td><td><code>java/ConvXdxf2Stardict.java</code> (class <code>ConvXdxf2Stardict</code>), launched by <code>linux/xdxf-2-stardict</code></td></tr>
+    <tr><td>Input</td><td>XDXF file or stdin</td></tr>
+    <tr><td>Output</td><td>A folder (created if missing) receiving the <code>stardict.*</code> files</td></tr>
+    <tr><td>Required</td><td><code>--in</code>, <code>--out</code>, <code>--merge-defs</code>, <code>--compress</code></td></tr>
+    <tr><td>Config namespace</td><td><code>xdxf2stardict.*</code></td></tr>
+  </table>
+  <h2>CLI Interface</h2>
+  <pre>xdxf-2-stardict -i &lt;xdxf|-&gt; -o &lt;dir&gt; -m ALWAYS|EXACT|NEVER -z true|false
+                [-n / --name &lt;title&gt;] [-c &lt;config&gt;] [--def &lt;name&gt;=&lt;value&gt; ...]</pre>
+  <h2>Design Choices</h2>
+  <h3>Merging</h3>
+  <p>Same <code>-m</code> modes and rules as xdxf-2-pbdic (<code>MergeMode</code>): repeated definitions dropped, case variants sorted together (by lowercase word, then word), the ALWAYS name chosen by <code>wordKind</code>. Joined definitions are separated by <code>&lt;hr/&gt;</code>. StarDict has no block-size limit, so nothing is cut and every join is done.</p>
+  <h3>Replacing a previous build safely</h3>
+  <ul>
+    <li>Before any work, the folder and its <code>stardict.*</code> files must be writable; a read-only file was protected on purpose, so the tool stops and leaves the previous build unchanged.</li>
+    <li>The size is checked before any file is touched: 4 GB for <code>.dict</code> (32-bit offsets), about 1.9 GB for <code>.dict.dz</code>.</li>
+    <li>The <code>.idx</code> and dictionary are built in memory, compressed; only when everything is built are the old <code>stardict.*</code> files (including a stale <code>.syn</code>) removed and the new ones written, the <code>.ifo</code> last. Other files in the folder are never touched.</li>
+  </ul>
+  <h3>Dictzip</h3>
+  <p><code>DictzipHelper</code> writes <code>.dict.dz</code> as one deflate stream with a full flush at each chunk boundary and the chunk sizes in the gzip header (<code>RA</code> field), so readers can seek to any entry; the file is also a plain gzip file.</p>
+  <h2>Program Structure — <code>ConvXdxf2Stardict</code></h2>
+  <ul>
+    <li><b>run()</b> — options, config, parse, sort, merge, size check, write</li>
+    <li><b>checkReplaceable()</b> · <b>checkDictSize()</b> — checks before any work / before touching files</li>
+    <li><b>writeStardict()</b> — builds <code>.idx</code> (<code>word\0</code> + big-endian offset + size) and <code>.dict[.dz]</code>, then <code>.ifo</code></li>
+    <li><b>joinDefs()</b> — joins two definitions with <code>&lt;hr/&gt;</code></li>
+  </ul>
+</div>
+
+<!-- check-pbdic -->
+<div class="chapter">
+  <div class="banner"><div class="in"><div class="name">check-pbdic</div><div class="sub">PocketBook .dic validator — cross-checks the binary against its XDXF<div class="sub mono" style="color:#dfe8f5;margin-top:6px">java/CheckPbdic.java · class CheckPbdic · run by linux/check-pbdic</div></div></div></div>
+  <h2>Overview</h2>
+  <p><b>check-pbdic</b> is a testing tool: given the source XDXF and the .dic made from it, it runs a series of checks and reports each as <b>PASS</b>, <b>FAIL</b> or <b>WARN</b>, with a summary at the end.</p>
+  <h2>Requirements</h2>
+  <table>
+    <tr><td>Implemented by</td><td><code>java/CheckPbdic.java</code> (class <code>CheckPbdic</code>), launched by <code>linux/check-pbdic</code></td></tr>
+    <tr><td>Input</td><td>Source XDXF + .dic + language folder (<code>collates.txt</code>)</td></tr>
+    <tr><td>Output</td><td>Report to stderr; exit code 0 when all checks passed, 1 otherwise</td></tr>
+    <tr><td>Config namespace</td><td><code>checkpbdic.*</code></td></tr>
+  </table>
+  <h2>CLI Interface</h2>
+  <pre>check-pbdic -x &lt;source.xdxf&gt; -d &lt;file.dic&gt; -l &lt;lang&gt;
+            [-s / --sample &lt;count&gt;] [-D / --langdir &lt;dir&gt;]
+            [-c &lt;config&gt;] [--def &lt;name&gt;=&lt;value&gt; ...]</pre>
+  <h2>Checks Performed</h2>
+  <ul>
+    <li><b>Entry count</b> — entries in the .dic against the XDXF</li>
+    <li><b>Headwords</b> — every XDXF headword present in the .dic</li>
+    <li><b>Sort order</b> — .dic entries in collation key order</li>
+    <li><b>Definitions</b> — N sampled entries (default 20) have the XDXF's text</li>
+    <li><b>Firmware format</b> — spacing rules around the format bytes</li>
+    <li><b>Block sizes</b> — compressed ≤ 4,096 bytes; decompressed ≤ 27,774 bytes; index ≤ 55,000 bytes</li>
+  </ul>
+  <div class="note">With <code>-m ALWAYS</code> or <code>EXACT</code>, merging makes the entry count lower than the XDXF's, and a headword merged into another spelling is reported as missing: those failures are expected and show how much was merged.</div>
+  <h2>Design Choices</h2>
+  <h3>Independent binary reader</h3>
+  <p>The .dic reader (<code>parseDic()</code>) is written separately from xdxf-2-pbdic: it parses the header, decompresses the index and every definition block from the format description, so it can find writer bugs that a shared reader would hide. The collation code is duplicated for the same reason.</p>
+  <h3>Definition text comparison</h3>
+  <p>The spot-check turns the SDIC bytes back into plain text (format bytes removed) and compares it with the XDXF definition's text (tags removed), with whitespace normalised.</p>
+  <h2>Program Structure — <code>CheckPbdic</code></h2>
+  <ul>
+    <li><b>run()</b> — options, loading, the checks, summary and exit code</li>
+    <li><b>parseDic()</b> · <b>parseXdxf()</b> — readers</li>
+    <li><b>loadCollation()</b> · <b>collatedKey()</b> — collation, as in xdxf-2-pbdic</li>
+    <li><b>stripFmt()</b> · <b>htmlToText()</b> — text for the comparison</li>
+    <li><b>pass()</b> · <b>fail()</b> · <b>warn()</b> — report</li>
+  </ul>
+</div>
+
+<!-- chains -->
+<div class="chapter">
+  <div class="banner"><div class="in"><div class="name">chain-* scripts</div><div class="sub">Several steps from one config file<div class="sub mono" style="color:#dfe8f5;margin-top:6px">linux/chain-* · linux/library.sh (bash)</div></div></div></div>
+  <h2>Overview</h2>
+  <table>
+    <tr><th>Script</th><th>Steps</th></tr>
+    <tr><td>chain-kaikki-2-xdxf</td><td>kaikki-2-tab → tab-2-xdxf</td></tr>
+    <tr><td>chain-stardict-2-xdxf</td><td>stardict-2-tab → tab-2-xdxf</td></tr>
+    <tr><td>chain-kaikki-2-stardict</td><td>kaikki-2-tab → tab-2-xdxf → xdxf-2-stardict</td></tr>
+  </table>
+  <h2>CLI Interface</h2>
+  <pre>chain-kaikki-2-xdxf &lt;config-file&gt; [--def &lt;name&gt;=&lt;value&gt; ...]</pre>
+  <h2>Design Choices</h2>
+  <ul>
+    <li><b>One config, several tools</b>: every step gets the same config file (each tool reads its own namespace) and the same <code>--def</code> arguments; ready-made configs are in <code>confs/</code>.</li>
+    <li><b>Runs from anywhere</b>: the config's relative paths are taken from the project root.</li>
+    <li><b>Temporary TSV</b>: the first step writes a temporary TSV, removed when the script ends, so a failure never overwrites the final output; the script stops at the first failing step and shows <code>[n/N]</code> step messages.</li>
+    <li><b>Shared code</b>: <code>linux/library.sh</code> holds the argument handling, the move to the project root, the config section check, the temporary TSV and the step messages; a chain script only sets its name and number of steps and lists its tool calls.</li>
+  </ul>
+</div>
+
+</body>
+</html>
