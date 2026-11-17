@@ -315,6 +315,9 @@ public class ConvXdxf2Pbdic {
 				int sp = tag.indexOf(' ');
 				if (sp > 0)
 					tag = tag.substring(0, sp);
+				// self-closed without a space, e.g. <br/> (as tab-2-xdxf writes it)
+				if (tag.endsWith("/"))
+					tag = tag.substring(0, tag.length() - 1);
 
 				if (opening) {
 					switch (tag) {
