@@ -1,4 +1,3 @@
-lang/**/*
 data/out/**/*
 windows/**/*
 !**/README.*
@@ -14,3 +13,6 @@ windows/**/*
 Snap.*.trc
 javacore.*.txt
 heapdump.*.phd
+
+# local scratch files
+/wrk/
