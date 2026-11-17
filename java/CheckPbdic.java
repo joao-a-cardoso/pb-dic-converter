@@ -108,7 +108,7 @@ public class CheckPbdic {
 		String dicPath = argsHlp.require(cli, "dic", "--dic/-d");
 		String lang = argsHlp.requireLang(cli, "lang", "--lang/-l");
 		String langDir = argsHlp.resolve(cli, "langdir", "lang/" + lang);
-		Integer sample = argsHlp.resolveInt(cli, "sample", 20);
+		int sample = argsHlp.resolveInt(cli, "sample", 20);
 
 		Path xdxfFile = Path.of(xdxfPath);
 		Path dicFile = Path.of(dicPath);

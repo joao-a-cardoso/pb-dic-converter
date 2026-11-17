@@ -419,7 +419,7 @@ public class ArgsHelper {
 		return upper(val);
 	}
 
-	public Integer requireInt(Map<String, String> cli, String key, String desc) {
+	public int requireInt(Map<String, String> cli, String key, String desc) {
 		String val = require(cli, key, desc);
 		try {
 			return Integer.parseInt(val);
@@ -428,7 +428,7 @@ public class ArgsHelper {
 		}
 	}
 
-	public Boolean requireBool(Map<String, String> cli, String key, String desc) {
+	public boolean requireBool(Map<String, String> cli, String key, String desc) {
 		String val = require(cli, key, desc);
 		return switch (lower(val)) {
 		case "true" -> true;
@@ -479,13 +479,11 @@ public class ArgsHelper {
 		return upper(val);
 	}
 
-	public Integer resolveInt(Map<String, String> cli, String key, Integer def) {
+	public int resolveInt(Map<String, String> cli, String key, int def) {
 		String val = resolve(cli, key, null);
 		if (val == null || val.isBlank()) {
-			cli.put(key, def == null ? null : def.toString());
-			if (def != null) {
-				sources.put(key, FROM_DEFAULT);
-			}
+			cli.put(key, String.valueOf(def));
+			sources.put(key, FROM_DEFAULT);
 			return def;
 		}
 
@@ -496,13 +494,11 @@ public class ArgsHelper {
 		}
 	}
 
-	public Boolean resolveBool(Map<String, String> cli, String key, Boolean def) {
+	public boolean resolveBool(Map<String, String> cli, String key, boolean def) {
 		String val = resolve(cli, key, null);
 		if (val == null || val.isBlank()) {
-			cli.put(key, def == null ? null : def.toString());
-			if (def != null) {
-				sources.put(key, FROM_DEFAULT);
-			}
+			cli.put(key, String.valueOf(def));
+			sources.put(key, FROM_DEFAULT);
 			return def;
 		}
 

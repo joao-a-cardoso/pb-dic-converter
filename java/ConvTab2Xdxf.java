@@ -81,7 +81,7 @@ public class ConvTab2Xdxf {
 		String langTo = argsHlp.resolveLang(cli, "lang-to", "--lang-to/-t", lang);
 		String name = argsHlp.require(cli, "name", "--name/-n");
 		String desc = argsHlp.resolve(cli, "desc", name);
-		Boolean validate = argsHlp.resolveBool(cli, "validate", true);
+		boolean validate = argsHlp.resolveBool(cli, "validate", true);
 
 		boolean fromStdin = "-".equals(input);
 		boolean toStdout = "-".equals(output);
