@@ -67,6 +67,33 @@ public class ConvKaikki2Tab {
 	static final String TOOL = "kaikki-2-tab";
 	private static final ToolLog LOG = new ToolLog(TOOL);
 
+	/** How expressions are emitted ({@code -e / --embedded-defs}). */
+	enum EmbeddedDefs {
+
+		//       in the parent's definition  as their own entries
+		KEEP    (true,                       false),
+		SEPARATE(false,                      true),
+		BOTH    (true,                       true);
+
+		final boolean embedded;
+		final boolean separate;
+
+		EmbeddedDefs(boolean embedded, boolean separate) {
+			this.embedded = embedded;
+			this.separate = separate;
+		}
+
+		/** The mode named {@code value}, ignoring case; otherwise a usage error. */
+		static EmbeddedDefs parse(String value) {
+			for (EmbeddedDefs mode : values()) {
+				if (mode.name().equalsIgnoreCase(value)) {
+					return mode;
+				}
+			}
+			throw CliException.error("Error: --embedded-defs must be KEEP, SEPARATE or BOTH, got: %s", value);
+		}
+	}
+
 	// ── main ──────────────────────────────────────────────────────────────────
 	public static void main(String[] args) {
 		ToolRunner.run(TOOL, ConvKaikki2Tab::usage, () -> run(args));
@@ -92,13 +119,9 @@ public class ConvKaikki2Tab {
 		boolean termFileGiven = cli.containsKey("terms-file");
 		Path termFile = Path.of(argsHlp.resolve(cli, "terms-file", defaultTermFile(lang).toString()));
 
-		String ewArg = argsHlp.resolveUC(cli, "embedded-defs", "BOTH");
-		if (!ewArg.equals("KEEP") && !ewArg.equals("SEPARATE") && !ewArg.equals("BOTH")) {
-			throw CliException.error(String.format("Error: --embedded-defs must be KEEP, SEPARATE or BOTH, got: %s", ewArg));
-		}
-
-		final boolean emitEmbedded = ewArg.equals("KEEP") || ewArg.equals("BOTH");
-		final boolean emitSeparate = ewArg.equals("SEPARATE") || ewArg.equals("BOTH");
+		EmbeddedDefs embeddedDefs = argsHlp.resolveParsed(EmbeddedDefs::parse, cli, "embedded-defs", EmbeddedDefs.BOTH);
+		final boolean emitEmbedded = embeddedDefs.embedded;
+		final boolean emitSeparate = embeddedDefs.separate;
 
 		boolean toStdout = "-".equals(output);
 
