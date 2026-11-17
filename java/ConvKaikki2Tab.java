@@ -31,6 +31,7 @@ import shared.ArgsHelper;
 import shared.TermTranslator;
 import shared.IoHelper;
 import shared.CliException;
+import shared.ToolLog;
 import shared.ToolRunner;
 import shared.JsonException;
 import shared.JsonParser;
@@ -62,23 +63,7 @@ import shared.JsonParser;
 public class ConvKaikki2Tab {
 
 	static final String TOOL = "kaikki-2-tab";
-
-	static void err(String msg, Object... args) {
-		if (msg.isBlank() || msg.startsWith(TOOL)) {
-			errRaw(msg, args);
-		} else {
-			errRaw(TOOL + ": " + msg, args);
-		}
-	}
-
-	static void abort(String msg, Object... args) {
-		throw CliException.error(msg, args);
-	}
-
-	static void errRaw(String msg, Object... args) {
-		// only format when arguments are given: pre-built messages may contain a literal '%'
-		System.err.println(args.length == 0 ? msg : String.format(msg, args));
-	}
+	private static final ToolLog LOG = new ToolLog(TOOL);
 
 	// ── main ──────────────────────────────────────────────────────────────────
 	public static void main(String[] args) {
@@ -94,7 +79,7 @@ public class ConvKaikki2Tab {
 		var cli = parseArgs(args);
 
 		// Load config file if specified
-		var argsHlp = new ArgsHelper(TOOL, "kaikki2tab", er -> err(er), () -> usage());
+		var argsHlp = new ArgsHelper(TOOL, "kaikki2tab", er -> LOG.err(er), () -> usage());
 
 		Properties config = argsHlp.loadConfig(cli);
 		argsHlp.mergeConfig2Cli(List.of("in", "out", "lang", "embedded-defs", "terms-file"), cli, config);
@@ -107,7 +92,7 @@ public class ConvKaikki2Tab {
 
 		String ewArg = argsHlp.resolveUC(cli, "embedded-defs", "BOTH");
 		if (!ewArg.equals("KEEP") && !ewArg.equals("SEPARATE") && !ewArg.equals("BOTH")) {
-			abort(String.format("Error: --embedded-defs must be KEEP, SEPARATE or BOTH, got: %s", ewArg));
+			throw CliException.error(String.format("Error: --embedded-defs must be KEEP, SEPARATE or BOTH, got: %s", ewArg));
 		}
 
 		final boolean emitEmbedded = ewArg.equals("KEEP") || ewArg.equals("BOTH");
@@ -118,7 +103,7 @@ public class ConvKaikki2Tab {
 		Path inFile = Path.of(input);
 
 		if (!Files.exists(inFile)) {
-			abort(String.format("Error: file not found: %s", inFile));
+			throw CliException.error(String.format("Error: file not found: %s", inFile));
 		}
 
 		argsHlp.listProperties(cli);
@@ -191,7 +176,7 @@ public class ConvKaikki2Tab {
 
 				} catch (JsonException e) {
 					// bad input: skip the line; anything else is a bug and stops the run (ToolRunner)
-					err(String.format("Warning: skipping malformed line %d: %s", lineNo, e.getMessage()));
+					LOG.err(String.format("Warning: skipping malformed line %d: %s", lineNo, e.getMessage()));
 					skipped++;
 				}
 			} // while
@@ -217,7 +202,7 @@ public class ConvKaikki2Tab {
 			}
 		} // main try
 
-		err(String.format(
+		LOG.err(String.format(
 				"%d entries written, %d filtered (wrong languages: %s), %d exact-content duplicates dropped (%d headwords affected), %d skipped (blank/error).",
 				count, filtered, lstFilteredLang.size(), duplicates, affectedWords.size(), skipped));
 	}
@@ -725,13 +710,13 @@ public class ConvKaikki2Tab {
 	static TermTranslator loadTermTranslations(Path file, boolean given) throws Exception {
 		if (!Files.exists(file)) {
 			if (given) {
-				abort("Error: term translation file not found: %s", file);
+				throw CliException.error("Error: term translation file not found: %s", file);
 			}
-			err("Term translations: none (%s not found) — labels are not translated", ArgsHelper.displayPath(file.toString()));
+			LOG.err("Term translations: none (%s not found) — labels are not translated", ArgsHelper.displayPath(file.toString()));
 			return TermTranslator.none();
 		}
 		TermTranslator terms = TermTranslator.load(file);
-		err("Term translations: %s (%d terms)", ArgsHelper.displayPath(file.toString()), terms.size());
+		LOG.err("Term translations: %s (%d terms)", ArgsHelper.displayPath(file.toString()), terms.size());
 		return terms;
 	}
 
@@ -832,7 +817,7 @@ public class ConvKaikki2Tab {
 	}
 
 	static Map<String, String> parseArgs(String[] args) {
-		return ArgsHelper.parse(args, ConvKaikki2Tab::optionKey, er -> err(er), () -> usage());
+		return ArgsHelper.parse(args, ConvKaikki2Tab::optionKey, er -> LOG.err(er), () -> usage());
 	}
 
 	static String usage() {

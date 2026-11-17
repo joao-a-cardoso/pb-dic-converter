@@ -20,6 +20,7 @@ import org.xml.sax.helpers.DefaultHandler;
 
 import shared.ArgsHelper;
 import shared.CliException;
+import shared.ToolLog;
 import shared.ToolRunner;
 
 /**
@@ -44,6 +45,7 @@ import shared.ToolRunner;
 public class CheckPbdic {
 
 	private static final String TOOL = "check-pbdic";
+	private static final ToolLog LOG = new ToolLog(TOOL);
 	// ── SDIC bytecodes ────────────────────────────────────────────────────────
 	static final byte FMT_END = 0x01;
 	static final byte FMT_BOLD = 0x02;
@@ -58,33 +60,22 @@ public class CheckPbdic {
 	static int passed = 0, failed = 0, warned = 0;
 
 	static void pass(String msg) {
-		err("  [PASS] " + msg);
+		LOG.err("  [PASS] " + msg);
 		passed++;
 	}
 
 	static void fail(String msg) {
-		err("  [FAIL] " + msg);
+		LOG.err("  [FAIL] " + msg);
 		failed++;
 	}
 
 	static void warn(String msg) {
-		err("  [WARN] " + msg);
+		LOG.err("  [WARN] " + msg);
 		warned++;
 	}
 
 	static void head(String msg) {
-		err("\n── " + msg + " ──");
-	}
-
-	static void err(String msg) {
-		if (msg.isBlank() || msg.startsWith(TOOL)) {
-			errRaw(msg);
-		} else {
-			errRaw(TOOL + ": " + msg);
-		}
-	}
-	static void errRaw(String msg) {
-		System.err.println(msg);
+		LOG.err("\n── " + msg + " ──");
 	}
 
 	// ── main ──────────────────────────────────────────────────────────────────
@@ -98,7 +89,7 @@ public class CheckPbdic {
 			throw new CliException(null, 1, true);
 		}
 
-		var argsHlp = new ArgsHelper(TOOL, "checkpbdic", er -> err(er), () -> usage());
+		var argsHlp = new ArgsHelper(TOOL, "checkpbdic", er -> LOG.err(er), () -> usage());
 		// Load config file if specified
 		Map<String, String> cli = parseArgs(args);
 		Properties config = argsHlp.loadConfig(cli);
@@ -119,7 +110,7 @@ public class CheckPbdic {
 		boolean inputMissing = false;
 		for (Path p : List.of(xdxfFile, dicFile, collatesFile)) {
 			if (!Files.exists(p)) {
-				err("Error: file not found: " + p);
+				LOG.err("Error: file not found: " + p);
 				inputMissing = true;
 			}
 		}
@@ -133,15 +124,15 @@ public class CheckPbdic {
 		var collation = loadCollation(collatesFile);
 
 		// Parse XDXF
-		err("Reading XDXF...");
+		LOG.err("Reading XDXF...");
 		var xdxfEntries = parseXdxf(xdxfFile);
-		err("Read. " + xdxfEntries.size() + " entries.");
+		LOG.err("Read. " + xdxfEntries.size() + " entries.");
 
 		// Parse .dic
-		err("Reading .dic...");
+		LOG.err("Reading .dic...");
 		var dicEntries = parseDic(dicFile);
-		err("Read. " + dicEntries.size() + " entries.");
-		err("");
+		LOG.err("Read. " + dicEntries.size() + " entries.");
+		LOG.err("");
 
 		// ── Check 1: Entry count ──────────────────────────────────────────────
 		head("Check 1: Entry count");
@@ -173,9 +164,9 @@ public class CheckPbdic {
 			pass("All " + xdxfCount + " XDXF headwords found in .dic.");
 		} else {
 			fail(missing + " XDXF headwords missing from .dic.");
-			missingWords.forEach(w -> err("         missing: " + repr(w)));
+			missingWords.forEach(w -> LOG.err("         missing: " + repr(w)));
 			if (missing > 10)
-				err("         ... and " + (missing - 10) + " more.");
+				LOG.err("         ... and " + (missing - 10) + " more.");
 		}
 
 		// ── Check 3: Sort order ───────────────────────────────────────────────
@@ -198,7 +189,7 @@ public class CheckPbdic {
 			pass("All " + dicCount + " entries are in correct collation order.");
 		} else {
 			fail(outOfOrder + " sort order violation(s).");
-			outOfOrderExamples.forEach(ex -> err("         " + ex));
+			outOfOrderExamples.forEach(ex -> LOG.err("         " + ex));
 		}
 
 		// ── Check 4: Spot-check definitions ───────────────────────────────────
@@ -239,7 +230,7 @@ public class CheckPbdic {
 			pass("All " + checked + " sampled definitions match.");
 		} else {
 			warn(defMismatches + " / " + checked + " sampled definitions differ.");
-			mismatchExamples.forEach(ex -> err("         " + ex));
+			mismatchExamples.forEach(ex -> LOG.err("         " + ex));
 		}
 
 		// ── Check 5: Firmware format constraints ──────────────────────────────
@@ -297,35 +288,35 @@ public class CheckPbdic {
 			pass("All definitions start with 0x20 (leading space).");
 		else {
 			fail(noLeadingSpace + " definition(s) missing leading 0x20.");
-			noSpaceExamples.forEach(w -> err("         " + w));
+			noSpaceExamples.forEach(w -> LOG.err("         " + w));
 		}
 
 		if (noTrailingSpace == 0)
 			pass("All definitions end with 0x20 (trailing space).");
 		else {
 			fail(noTrailingSpace + " definition(s) missing trailing 0x20.");
-			noTrailExamples.forEach(w -> err("         " + w));
+			noTrailExamples.forEach(w -> LOG.err("         " + w));
 		}
 
 		if (endSpanNoSpace == 0)
 			pass("All 0x01 (end-span) bytes are followed by 0x20 (space).");
 		else {
 			fail(endSpanNoSpace + " definition(s) have 0x01 not followed by 0x20.");
-			endSpanExamples.forEach(w -> err("         " + w));
+			endSpanExamples.forEach(w -> LOG.err("         " + w));
 		}
 
 		if (newlineWithoutSpace == 0)
 			pass("All 0x0A (newline) bytes are preceded by 0x20 (space).");
 		else {
 			fail(newlineWithoutSpace + " definition(s) have 0x0A not preceded by 0x20.");
-			newlineExamples.forEach(w -> err("         " + w));
+			newlineExamples.forEach(w -> LOG.err("         " + w));
 		}
 
 		if (doubleSpaceAfterNewline == 0)
 			pass("All 0x0A (newline) bytes are followed by exactly one 0x20.");
 		else {
 			fail(doubleSpaceAfterNewline + " definition(s) have 0x0A followed by two or more 0x20 bytes.");
-			doubleSpaceExamples.forEach(w -> err("         " + w));
+			doubleSpaceExamples.forEach(w -> LOG.err("         " + w));
 		}
 
 		// ── Check 6: Block size limits ────────────────────────────────────────
@@ -407,11 +398,11 @@ public class CheckPbdic {
 		}
 
 		// ── Summary ───────────────────────────────────────────────────────────
-		err("");
-		err("────────────────────────────────────");
+		LOG.err("");
+		LOG.err("────────────────────────────────────");
 		int total = passed + failed + warned;
-		err(String.format("Result: %d passed, %d failed, %d warnings  (%d checks)", passed, failed, warned, total));
-		err("────────────────────────────────────");
+		LOG.err(String.format("Result: %d passed, %d failed, %d warnings  (%d checks)", passed, failed, warned, total));
+		LOG.err("────────────────────────────────────");
 		if (failed > 0) {
 			throw new CliException(null, 1, false); // result already logged
 		}
@@ -667,7 +658,7 @@ public class CheckPbdic {
 	}
 
 	static Map<String, String> parseArgs(String[] args) throws IOException {
-		return ArgsHelper.parse(args, CheckPbdic::optionKey, er -> err(er), () -> usage());
+		return ArgsHelper.parse(args, CheckPbdic::optionKey, er -> LOG.err(er), () -> usage());
 	}
 
 	static String usage() {

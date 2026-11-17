@@ -17,6 +17,7 @@ import java.util.zip.GZIPInputStream;
 import shared.ArgsHelper;
 import shared.IoHelper;
 import shared.CliException;
+import shared.ToolLog;
 import shared.ToolRunner;
 
 /**
@@ -29,23 +30,7 @@ import shared.ToolRunner;
 public class ConvStardict2Tab {
 
 	private static final String TOOL = "stardict-2-tab";
-
-	static void err(String msg, Object... args) {
-		if (msg.isBlank() || msg.startsWith(TOOL)) {
-			errRaw(msg, args);
-		} else {
-			errRaw(TOOL + ": " + msg, args);
-		}
-	}
-
-	static void abort(String msg, Object... args) {
-		throw CliException.error(msg, args);
-	}
-
-	static void errRaw(String msg, Object... args) {
-		// only format when arguments are given: pre-built messages may contain a literal '%'
-		System.err.println(args.length == 0 ? msg : String.format(msg, args));
-	}
+	private static final ToolLog LOG = new ToolLog(TOOL);
 
 	record Entry(String word, String definition) {
 	}
@@ -65,7 +50,7 @@ public class ConvStardict2Tab {
 		}
 
 		var cli = parseArgs(args);
-		var argsHlp = new ArgsHelper(TOOL, "stardict2tab", er -> err(er), () -> usage());
+		var argsHlp = new ArgsHelper(TOOL, "stardict2tab", er -> LOG.err(er), () -> usage());
 		// Load config file if specified
 		Properties config = argsHlp.loadConfig(cli);
 		argsHlp.mergeConfig2Cli(List.of("in", "out"), cli, config);
@@ -77,7 +62,7 @@ public class ConvStardict2Tab {
 
 		Path inFile = Path.of(input);
 		if (!Files.exists(inFile)) {
-			abort("Error: file not found: " + inFile);
+			throw CliException.error("Error: file not found: " + inFile);
 		}
 
 		argsHlp.listProperties(cli);
@@ -90,7 +75,7 @@ public class ConvStardict2Tab {
 				writer.write(e.word() + "\t" + e.definition().replace("\n", " ").replace("\t", " ") + "\n");
 		}
 
-		err("Done. " + entries.size() + " entries written to " + (toStdout ? "<stdout>" : ArgsHelper.displayPath(output)) + ".");
+		LOG.err("Done. " + entries.size() + " entries written to " + (toStdout ? "<stdout>" : ArgsHelper.displayPath(output)) + ".");
 	}
 
 	// --- StarDict reader ---
@@ -156,7 +141,7 @@ public class ConvStardict2Tab {
 		for (var raw : rawEntries)
 			entries.add(new Entry(raw.word(), new String(dictData, raw.offset(), raw.size(), StandardCharsets.UTF_8)));
 
-		err("Read. " + entries.size() + " entries.");
+		LOG.err("Read. " + entries.size() + " entries.");
 		return entries;
 	}
 
@@ -178,7 +163,7 @@ public class ConvStardict2Tab {
 	}
 
 	static Map<String, String> parseArgs(String[] args) {
-		return ArgsHelper.parse(args, ConvStardict2Tab::optionKey, er -> err(er), () -> usage());
+		return ArgsHelper.parse(args, ConvStardict2Tab::optionKey, er -> LOG.err(er), () -> usage());
 	}
 
 	static String usage() {

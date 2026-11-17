@@ -23,6 +23,7 @@ import java.util.zip.Deflater;
 import shared.ArgsHelper;
 import shared.IoHelper;
 import shared.CliException;
+import shared.ToolLog;
 import shared.ToolRunner;
 import shared.Constants;
 import shared.XdxfHelper;
@@ -75,7 +76,7 @@ public class ConvXdxf2Pbdic {
 		}
 
 		var cli = parseArgs(args);
-		var argsHlp = new ArgsHelper(TOOL, "xdxf2pbdic", er -> err(er), () -> usage());
+		var argsHlp = new ArgsHelper(TOOL, "xdxf2pbdic", er -> LOG.err(er), () -> usage());
 		Properties config = argsHlp.loadConfig(cli);
 		argsHlp.mergeConfig2Cli(List.of("in", "out", "lang", "langdir", "name", "merge-defs"), cli, config);
 
@@ -91,18 +92,18 @@ public class ConvXdxf2Pbdic {
 		Path langDirPath = Path.of(langDir);
 
 		if (!fromStdin && !Files.exists(xdxfPath)) {
-			abort(String.format("Error: input file not found: %s", xdxfPath));
+			throw CliException.error(String.format("Error: input file not found: %s", xdxfPath));
 		}
 		if (!Files.isDirectory(langDirPath)) {
-			err(String.format("Error: language directory not found: %s", langDirPath));
-			errRaw("       Download from: https://github.com/Markismus/LanguageFilesPocketbookConverter");
+			LOG.err(String.format("Error: language directory not found: %s", langDirPath));
+			LOG.raw("       Download from: https://github.com/Markismus/LanguageFilesPocketbookConverter");
 			throw new CliException(null, 1, false); // messages already logged
 		}
 
 		String mergeDefs = argsHlp.requireUC(cli, "merge-defs", "--merge-defs/-m");
 		mergeDefs = upper(mergeDefs);
 		if (!mergeDefs.equals("ALWAYS") && !mergeDefs.equals("EXACT") && !mergeDefs.equals("NEVER")) {
-			abort(String.format("Error: -m / --merge-defs must be ALWAYS, EXACT or NEVER, got: %s", mergeDefs));
+			throw CliException.error(String.format("Error: -m / --merge-defs must be ALWAYS, EXACT or NEVER, got: %s", mergeDefs));
 		}
 
 		cli.put("merge-defs", mergeDefs);
@@ -112,10 +113,10 @@ public class ConvXdxf2Pbdic {
 		var collation = loadCollation(langDirPath.resolve("collates.txt"));
 		byte[] morphem = readAsUtf16Le(langDirPath.resolve("morphems.txt"));
 		byte[] keyboard = Files.readAllBytes(langDirPath.resolve("keyboard.txt"));
-		err(String.format("Language files loaded. %d collation pairs.", collation.size()));
+		LOG.err(String.format("Language files loaded. %d collation pairs.", collation.size()));
 
 		// 2. Parse XDXF
-		err("Parsing...");
+		LOG.err("Parsing...");
 		var header = new XdxfHeader[1];
 		var entries = new ArrayList<ParsedEntry>();
 		try (InputStream input = IoHelper.openInput(inPath)) {
@@ -123,7 +124,7 @@ public class ConvXdxf2Pbdic {
 					ConvXdxf2Pbdic::htmlToSdic, //
 					hdr -> header[0] = hdr, //
 					entries::add);
-			err(String.format("read %d entries.", count));
+			LOG.err(String.format("read %d entries.", count));
 		}
 
 		// Use data from the header
@@ -142,7 +143,7 @@ public class ConvXdxf2Pbdic {
 		truncateOversized(entries);
 
 		// 3. Sort by collated headword
-		err("Sorting...");
+		LOG.err("Sorting...");
 		entries.sort(Comparator.comparing(e -> collatedKey(e.word(), collation)));
 
 		// 4. Merge/dedup headwords according to -m / --merge-defs mode:
@@ -152,7 +153,7 @@ public class ConvXdxf2Pbdic {
 		// identical
 		// NEVER — headword match is case-sensitive; never merge, only drop
 		// byte-identical duplicates
-		err("Merging duplicates...");
+		LOG.err("Merging duplicates...");
 		var merged = new ArrayList<ParsedEntry>(entries.size());
 		for (ParsedEntry e : entries) {
 			if (!merged.isEmpty()) {
@@ -171,7 +172,7 @@ public class ConvXdxf2Pbdic {
 						if (joined.length > maxDefinitionBytes(keepWord)) {
 							// merged entry would not fit in a block: start a new entry for this word;
 							// the following definitions are merged into it
-							err(String.format("Note: '%s' — merged definitions reached the block limit (%,d bytes): new entry started",
+							LOG.err(String.format("Note: '%s' — merged definitions reached the block limit (%,d bytes): new entry started",
 									e.word(), maxDefinitionBytes(keepWord)));
 							merged.add(e);
 							continue;
@@ -192,21 +193,21 @@ public class ConvXdxf2Pbdic {
 		}
 		int mergedCount = entries.size() - merged.size();
 		if (mergedCount > 0)
-			err(String.format("Merged/deduped %d entries (merge-defs=%s)", mergedCount, mergeDefs));
+			LOG.err(String.format("Merged/deduped %d entries (merge-defs=%s)", mergedCount, mergeDefs));
 		entries = merged;
 
 		// 5. Pack into blocks
-		err("Packing...");
+		LOG.err("Packing...");
 		var blocks = packBlocks(entries);
-		err(String.format("Packed. %d blocks.", blocks.size()));
+		LOG.err(String.format("Packed. %d blocks.", blocks.size()));
 
 		// 5. Write .dic
-		err("Writing...");
+		LOG.err("Writing...");
 		if (dicFile.getParent() != null)
 			Files.createDirectories(dicFile.getParent());
 		writeDic(dicFile, name, entries.size(), collation, morphem, keyboard, blocks);
 
-		err(String.format("%d entries written to %s.", entries.size(), ArgsHelper.displayPath(dicFile.toString())));
+		LOG.err(String.format("%d entries written to %s.", entries.size(), ArgsHelper.displayPath(dicFile.toString())));
 	}
 
 	// ── 1. Collation table ────────────────────────────────────────────────────
@@ -454,7 +455,7 @@ public class ConvXdxf2Pbdic {
 			int max = maxDefinitionBytes(e.word());
 			if (e.definition().length > max) {
 				entries.set(k, new ParsedEntry(e.word(), truncateDefinition(e.definition(), max)));
-				err(String.format("Warning: definition of '%s' is %,d bytes, more than fits in one block (%,d): truncated, ending with [...]",
+				LOG.err(String.format("Warning: definition of '%s' is %,d bytes, more than fits in one block (%,d): truncated, ending with [...]",
 						e.word(), e.definition().length, max));
 			}
 		}
@@ -621,7 +622,7 @@ public class ConvXdxf2Pbdic {
 			for (Block b : blocks) {
 				os.write(b.container());
 				if (++n % 200 == 0)
-					err(String.format("  %d / %d blocks written", n, blocks.size()));
+					LOG.err(String.format("  %d / %d blocks written", n, blocks.size()));
 			}
 		}
 	}
@@ -732,27 +733,11 @@ public class ConvXdxf2Pbdic {
 	}
 
 	static Map<String, String> parseArgs(String[] args) throws IOException {
-		return ArgsHelper.parse(args, ConvXdxf2Pbdic::optionKey, er -> err(er), () -> usage());
+		return ArgsHelper.parse(args, ConvXdxf2Pbdic::optionKey, er -> LOG.err(er), () -> usage());
 	}
 
 	static final String TOOL = "xdxf-2-pbdic";
-
-	static void err(String msg, Object... args) {
-		if (msg.isBlank() || msg.startsWith(TOOL)) {
-			errRaw(msg, args);
-		} else {
-			errRaw(TOOL + ": " + msg, args);
-		}
-	}
-
-	static void abort(String msg, Object... args) {
-		throw CliException.error(msg, args);
-	}
-
-	static void errRaw(String msg, Object... args) {
-		// only format when arguments are given: pre-built messages may contain a literal '%'
-		System.err.println(args.length == 0 ? msg : String.format(msg, args));
-	}
+	private static final ToolLog LOG = new ToolLog(TOOL);
 
 	static String usage() {
 		return TOOL + ": " + """

@@ -14,6 +14,7 @@ import java.util.Properties;
 import shared.ArgsHelper;
 import shared.IoHelper;
 import shared.CliException;
+import shared.ToolLog;
 import shared.ToolRunner;
 import shared.LangHelper;
 import shared.XdxfHelper;
@@ -39,23 +40,7 @@ import shared.XdxfHelper.XdxfHeader;
 public class ConvTab2Xdxf {
 
 	static final String TOOL = "tab-2-xdxf";
-
-	static void err(String msg, Object... args) {
-		if (msg.isBlank() || msg.startsWith(TOOL)) {
-			errRaw(msg, args);
-		} else {
-			errRaw(TOOL + ": " + msg, args);
-		}
-	}
-
-	static void abort(String msg, Object... args) {
-		throw CliException.error(msg, args);
-	}
-
-	static void errRaw(String msg, Object... args) {
-		// only format when arguments are given: pre-built messages may contain a literal '%'
-		System.err.println(args.length == 0 ? msg : String.format(msg, args));
-	}
+	private static final ToolLog LOG = new ToolLog(TOOL);
 
 	// ── main ──────────────────────────────────────────────────────────────────
 	public static void main(String[] args) {
@@ -71,7 +56,7 @@ public class ConvTab2Xdxf {
 		var cli = parseArgs(args);
 
 		// Load config file if specified
-		var argsHlp = new ArgsHelper(TOOL, "tab2xdxf", er -> err(er), () -> usage());
+		var argsHlp = new ArgsHelper(TOOL, "tab2xdxf", er -> LOG.err(er), () -> usage());
 		Properties config = argsHlp.loadConfig(cli);
 		argsHlp.mergeConfig2Cli(List.of("in", "out", "name", "desc", "lang", "lang-to", "validate"), cli, config);
 
@@ -91,7 +76,7 @@ public class ConvTab2Xdxf {
 		String langTo3 = LangHelper.langIso2toIso3(langTo);
 
 		if (!fromStdin && !Files.exists(Path.of(input))) {
-			abort(String.format("Error: file not found: %s", input));
+			throw CliException.error(String.format("Error: file not found: %s", input));
 		}
 
 		argsHlp.listProperties(cli);
@@ -106,10 +91,10 @@ public class ConvTab2Xdxf {
 			Path tmp = Files.createTempFile("tab2xdxf-", ".xdxf");
 			try {
 				try (var out = Files.newOutputStream(tmp)) {
-					XdxfHelper.writeXdxf(header, entries, out, er -> err(er));
+					XdxfHelper.writeXdxf(header, entries, out, er -> LOG.err(er));
 				}
 				// exits on failure, deletes tmp
-				XdxfHelper.validateXdxf(tmp, true, er -> err(er));
+				XdxfHelper.validateXdxf(tmp, true, er -> LOG.err(er));
 				try (var in = Files.newInputStream(tmp)) {
 					in.transferTo(System.out);
 				}
@@ -119,14 +104,14 @@ public class ConvTab2Xdxf {
 			}
 		} else if (toStdout) {
 			try (OutputStream out = IoHelper.openOutput(output)) {
-				XdxfHelper.writeXdxf(header, entries, out, er -> err(er));
+				XdxfHelper.writeXdxf(header, entries, out, er -> LOG.err(er));
 			}
 		} else
 			try (var out = Files.newOutputStream(outFile)) {
-				XdxfHelper.writeXdxf(header, entries, out, er -> err(er));
+				XdxfHelper.writeXdxf(header, entries, out, er -> LOG.err(er));
 				if (validate) {
 					// exits on failure, deletes tmp
-					XdxfHelper.validateXdxf(outFile, true, er -> err(er));
+					XdxfHelper.validateXdxf(outFile, true, er -> LOG.err(er));
 				}
 			}
 	}
@@ -145,12 +130,12 @@ public class ConvTab2Xdxf {
 				continue;
 			int tab = line.indexOf('\t');
 			if (tab == -1) {
-				err(String.format("Warning: line %d has no tab, skipping.", lineNum));
+				LOG.err(String.format("Warning: line %d has no tab, skipping.", lineNum));
 				continue;
 			}
 			entries.add(new XdxfEntry(line.substring(0, tab).strip(), line.substring(tab + 1)));
 		}
-		err(String.format("read %d entries.", entries.size()));
+		LOG.err(String.format("read %d entries.", entries.size()));
 		return entries;
 	}
 
@@ -177,7 +162,7 @@ public class ConvTab2Xdxf {
 	}
 
 	static Map<String, String> parseArgs(String[] args) {
-		return ArgsHelper.parse(args, ConvTab2Xdxf::optionKey, er -> err(er), () -> usage());
+		return ArgsHelper.parse(args, ConvTab2Xdxf::optionKey, er -> LOG.err(er), () -> usage());
 	}
 
 	static String usage() {

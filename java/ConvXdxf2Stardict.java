@@ -20,6 +20,7 @@ import java.util.stream.Collectors;
 import shared.ArgsHelper;
 import shared.IoHelper;
 import shared.CliException;
+import shared.ToolLog;
 import shared.ToolRunner;
 import shared.DictzipUtil;
 import shared.XdxfHelper.ParsedEntry;
@@ -47,28 +48,12 @@ import shared.XdxfHelper.XdxfHeader;
 public class ConvXdxf2Stardict {
 
 	static final String TOOL = "xdxf-2-stardict";
+	private static final ToolLog LOG = new ToolLog(TOOL);
 
 	/** Files of a StarDict dictionary named "stardict" (.syn: synonyms, not written but removed if stale). */
 	static final List<String> STARDICT_EXTENSIONS = List.of(".ifo", ".idx", ".dict", ".dict.dz", ".syn");
 
 	static final String version = "2.4.2";
-
-	static void err(String msg, Object... args) {
-		if (msg.isBlank() || msg.startsWith(TOOL)) {
-			errRaw(msg, args);
-		} else {
-			errRaw(TOOL + ": " + msg, args);
-		}
-	}
-
-	static void abort(String msg, Object... args) {
-		throw CliException.error(msg, args);
-	}
-
-	static void errRaw(String msg, Object... args) {
-		// only format when arguments are given: pre-built messages may contain a literal '%'
-		System.err.println(args.length == 0 ? msg : String.format(msg, args));
-	}
 
 	// ── main ──────────────────────────────────────────────────────────────────
 	public static void main(String[] args) {
@@ -82,7 +67,7 @@ public class ConvXdxf2Stardict {
 		}
 
 		var cli = parseArgs(args);
-		var argsHlp = new ArgsHelper(TOOL, "xdxf2stardict", er -> err(er), () -> usage());
+		var argsHlp = new ArgsHelper(TOOL, "xdxf2stardict", er -> LOG.err(er), () -> usage());
 		Properties config = argsHlp.loadConfig(cli);
 		argsHlp.mergeConfig2Cli(List.of("in", "out", "name", "merge-defs", "compress"), cli, config);
 
@@ -96,19 +81,19 @@ public class ConvXdxf2Stardict {
 		Path xdxfFile = fromStdin ? null : Path.of(inPath);
 
 		if (!fromStdin && !Files.exists(xdxfFile)) {
-			abort(String.format("Error: input file not found: %s", xdxfFile));
+			throw CliException.error(String.format("Error: input file not found: %s", xdxfFile));
 		}
 
 		String mergeDefs = argsHlp.requireUC(cli, "merge-defs", "--merge-defs/-m");
 		if (!mergeDefs.equals("ALWAYS") && !mergeDefs.equals("EXACT") && !mergeDefs.equals("NEVER")) {
-			abort(String.format("Error: -m / --merge-defs must be ALWAYS, EXACT or NEVER, got: %s", mergeDefs));
+			throw CliException.error(String.format("Error: -m / --merge-defs must be ALWAYS, EXACT or NEVER, got: %s", mergeDefs));
 		}
 
 		cli.put("merge-defs", mergeDefs);
 		argsHlp.listProperties(cli);
 
 		// 1. Parse XDXF
-		err("Parsing...");
+		LOG.err("Parsing...");
 		var header = new XdxfHeader[1];
 		var entries = new ArrayList<ParsedEntry>();
 		try (InputStream input = IoHelper.openInput(inPath)) {
@@ -116,7 +101,7 @@ public class ConvXdxf2Stardict {
 					ConvXdxf2Stardict::htmlToSdic, //
 					hdr -> header[0] = hdr, //
 					entries::add);
-			err(String.format("read %d entries.", count));
+			LOG.err(String.format("read %d entries.", count));
 		}
 
 		// Use data from the header
@@ -133,12 +118,12 @@ public class ConvXdxf2Stardict {
 		}
 
 		// 2. Sort alphabetically (case-insensitive)
-		err("Sorting...");
+		LOG.err("Sorting...");
 		entries.sort(Comparator.comparing((ParsedEntry e) -> lower(e.word()))
 				.thenComparing(e -> e.word()));
 
 		// 3. Merge/dedup
-		err("Merging duplicates...");
+		LOG.err("Merging duplicates...");
 		var merged = new ArrayList<ParsedEntry>(entries.size());
 		for (ParsedEntry e : entries) {
 			if (!merged.isEmpty()) {
@@ -167,12 +152,12 @@ public class ConvXdxf2Stardict {
 		}
 		int mergedCount = entries.size() - merged.size();
 		if (mergedCount > 0) {
-			err(String.format("Merged/deduped %d entries (merge-defs=%s).", mergedCount, mergeDefs));
+			LOG.err(String.format("Merged/deduped %d entries (merge-defs=%s).", mergedCount, mergeDefs));
 		}
 		entries = merged;
 
 		// 4. Write StarDict files
-		err("Writing...");
+		LOG.err("Writing...");
 		Path outPath = Path.of(outDir);
 		Files.createDirectories(outPath);
 		// remove only the files of a previous StarDict build in this folder (never
@@ -186,7 +171,7 @@ public class ConvXdxf2Stardict {
 				.filter(ext -> Files.exists(outPath.resolve("stardict" + ext)))
 				.collect(Collectors.joining(", "));
 
-		err(String.format("Done. %d entries written to %s. {%s}.", entries.size(), //
+		LOG.err(String.format("Done. %d entries written to %s. {%s}.", entries.size(), //
 				ArgsHelper.displayPath(outPath.toString()), extensions));
 	}
 
@@ -263,7 +248,7 @@ public class ConvXdxf2Stardict {
 			idxStrm.writeTo(idxOut);
 			// Write .dict
 			if (compress) {
-				err("... compressing dict file");
+				LOG.err("... compressing dict file");
 				DictzipUtil.write(dictStrm, dictOut);
 			} else {
 				dictStrm.writeTo(dictOut);
@@ -311,7 +296,7 @@ public class ConvXdxf2Stardict {
 	}
 
 	static Map<String, String> parseArgs(String[] args) throws IOException {
-		return ArgsHelper.parse(args, ConvXdxf2Stardict::optionKey, er -> err(er), () -> usage());
+		return ArgsHelper.parse(args, ConvXdxf2Stardict::optionKey, er -> LOG.err(er), () -> usage());
 	}
 
 	static String usage() {

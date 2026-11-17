@@ -512,11 +512,7 @@ public class ArgsHelper {
 	}
 
 	void log(String msg, Object... objects) {
-		if (msg.isBlank() || msg.startsWith(toolName)) {
-			logRaw(msg, objects);
-		} else {
-			logRaw(toolName + ": " + msg, objects);
-		}
+		logRaw(ToolLog.prefix(toolName, msg), objects);
 	}
 
 	/**

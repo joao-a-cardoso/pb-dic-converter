@@ -50,21 +50,17 @@ public final class ToolRunner {
 			return 0;
 		} catch (CliException e) {
 			if (e.getMessage() != null) {
-				System.err.println(prefixed(tool, e.getMessage()));
+				System.err.println(ToolLog.prefix(tool, e.getMessage()));
 			}
 			if (e.showUsage()) {
 				ArgsHelper.displayUsage(usage, e.exitCode() == 0 ? System.out : System.err);
 			}
 			return e.exitCode();
 		} catch (Exception e) {
-			System.err.println(prefixed(tool, "Error: " + e));
+			System.err.println(ToolLog.prefix(tool, "Error: " + e));
 			e.printStackTrace();
 			return 1;
 		}
 	}
 
-	/** "tool: message", unless the message is blank or already starts with the tool name. */
-	static String prefixed(String tool, String message) {
-		return message.isBlank() || message.startsWith(tool) ? message : tool + ": " + message;
-	}
 }
