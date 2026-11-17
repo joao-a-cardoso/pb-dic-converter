@@ -144,7 +144,7 @@ public class ConvXdxf2Pbdic {
 
 		// 3. Sort by collated headword
 		LOG.err("Sorting...");
-		entries.sort(Comparator.comparing(e -> collatedKey(e.word(), collation)));
+		sortByCollatedKey(entries, collation);
 
 		// 4. Merge/dedup headwords according to -m / --merge-defs mode:
 		// ALWAYS — headword match is case-insensitive; merge different defs, drop
@@ -243,6 +243,24 @@ public class ConvXdxf2Pbdic {
 	}
 
 	/** Normalise a word for sorting: map codepoints, drop ignored (0). */
+	/**
+	 * Sorts {@code entries} by {@link #collatedKey}, in place. Each key is
+	 * computed once (not twice per comparison); the sort is stable, so entries
+	 * with the same key keep their order.
+	 */
+	static void sortByCollatedKey(List<ParsedEntry> entries, Map<Integer, Integer> collation) {
+		record Keyed(String key, ParsedEntry entry) {
+		}
+		var keyed = new ArrayList<Keyed>(entries.size());
+		for (ParsedEntry e : entries) {
+			keyed.add(new Keyed(collatedKey(e.word(), collation), e));
+		}
+		keyed.sort(Comparator.comparing(Keyed::key));
+		for (int i = 0; i < keyed.size(); i++) {
+			entries.set(i, keyed.get(i).entry());
+		}
+	}
+
 	static String collatedKey(String word, Map<Integer, Integer> collation) {
 		var sb = new StringBuilder();
 		word.codePoints().forEach(cp -> {
@@ -514,31 +532,189 @@ public class ConvXdxf2Pbdic {
 		return out.toByteArray();
 	}
 
+	/**
+	 * Packs the sorted entries into blocks. A block is closed before the entry
+	 * that would break one of its limits: more than {@link #TARGET_BLOCK_ENTRIES}
+	 * entries, more than {@link #TARGET_BLOCK_DECOMPRESSED} bytes, or, once over
+	 * 3,000 bytes, more than {@link #TARGET_BLOCK_COMPRESSED} bytes compressed.
+	 * An entry that breaks a limit on its own stays alone in its block.
+	 *
+	 * <p>
+	 * The compressed size is measured only when it could be over the limit (see
+	 * {@link PendingBlock#compressedOver}); the blocks are the same as when it is
+	 * measured after every entry, only faster.
+	 */
 	static List<Block> packBlocks(List<ParsedEntry> entries) throws IOException {
 		var blocks = new ArrayList<Block>();
-		var current = new ArrayList<ParsedEntry>();
-		int currentDsz = 0;
+		var deflater = new Deflater(Deflater.DEFAULT_COMPRESSION, false);
+		try {
+			var block = new PendingBlock(deflater);
+			for (ParsedEntry e : entries) {
+				int entrySize = e.serialisedLength();
+				block.add(e);
+				boolean flush = block.count > TARGET_BLOCK_ENTRIES || // entry count hard cap
+						block.size + 2 > TARGET_BLOCK_DECOMPRESSED || // decompressed size hard cap
+						(block.size > 3_000 && block.compressedOver(TARGET_BLOCK_COMPRESSED)); // compressed cap
+				if (flush && block.count > 1) {
+					blocks.add(block.closeBeforeLast(entrySize));
+				}
+			}
+			if (block.count > 0) {
+				blocks.add(block.close());
+			}
+		} finally {
+			deflater.end();
+		}
+		return blocks;
+	}
 
-		for (ParsedEntry e : entries) {
-			int entrySize = e.serialisedLength();
-			current.add(e);
-			currentDsz += entrySize;
-			boolean flush = current.size() > TARGET_BLOCK_ENTRIES || // entry count hard cap
-					currentDsz + 2 > TARGET_BLOCK_DECOMPRESSED || // decompressed size hard cap
-					(currentDsz > 3_000 && compressBlock(current).container().length > TARGET_BLOCK_COMPRESSED); // compressed
-																													// cap
-			if (flush && current.size() > 1) {
-				current.remove(current.size() - 1);
-				currentDsz -= entrySize;
-				blocks.add(compressBlock(current));
-				current.clear();
-				current.add(e);
-				currentDsz = entrySize;
+	/**
+	 * At most how much the compressed size of a block grows when
+	 * {@code addedBytes} bytes are added to it; lets
+	 * {@link PendingBlock#compressedOver} skip compressing while the block
+	 * cannot be over the limit.<br>
+	 * Why about {@code addedBytes}: deflate stores data it cannot compress (the
+	 * bytes plus a 5-byte header), so it never has to expand data much; and
+	 * appending does not change how the earlier bytes were matched (zlib looks
+	 * ahead at most 258 bytes), it only adds literals or matches at the end.
+	 * What can change is the Huffman tables of the last deflate block, rebuilt
+	 * for old and new data together: earlier symbols may get slightly longer
+	 * codes, the table header may change size.<br>
+	 * The margin covers that: 5/4 lets each added byte cost 10 bits instead of
+	 * 8, 64 bytes a fixed overhead (a stored-block header, a different table
+	 * header). It is an engineering bound, not a proof; on the Kaikki PT→PT and
+	 * EN→PT dictionaries (45k measurements) the growth was at most
+	 * 0.67 × addedBytes. If it were ever exceeded, a block could end up
+	 * somewhat over {@link #TARGET_BLOCK_COMPRESSED} (the entry and
+	 * decompressed-size limits are always checked exactly).
+	 */
+	static int maxDeflateGrowth(int addedBytes) {
+		return addedBytes + addedBytes / 4 + 64;
+	}
+
+	/**
+	 * The block being filled: its entries serialised one after the other (each
+	 * entry is serialised once, as it is added), and the last two compressed
+	 * results, so that a block is not compressed twice for the same contents.
+	 */
+	private static final class PendingBlock {
+		private final Deflater deflater;
+		/** The serialised entries, then room for the 2-byte terminator. */
+		private byte[] raw = new byte[2 * TARGET_BLOCK_DECOMPRESSED];
+		/** Bytes of serialised entries (without the terminator). */
+		int size;
+		int count;
+		private byte[] firstWord;
+		private byte[] lastWord;
+		/** The latest compressed result and the one before; {@code size} -1 = none. */
+		private Compressed last = new Compressed(), previous = new Compressed();
+
+		private static final class Compressed {
+			byte[] data = new byte[8 * 1024];
+			int length;
+			int size = -1;
+		}
+
+		PendingBlock(Deflater deflater) {
+			this.deflater = deflater;
+		}
+
+		/** Appends {@code e}, serialised: u16 length, word, 0, definition, 0. */
+		void add(ParsedEntry e) {
+			byte[] word = e.word().getBytes(StandardCharsets.UTF_8);
+			byte[] def = e.definition();
+			int len = 2 + word.length + 1 + def.length + 1;
+			ensureRoom(len + 2);
+			int at = size;
+			int u16 = Math.min(len, 0xFFFF);
+			raw[at++] = (byte) u16;
+			raw[at++] = (byte) (u16 >> 8);
+			System.arraycopy(word, 0, raw, at, word.length);
+			at += word.length;
+			raw[at++] = 0;
+			System.arraycopy(def, 0, raw, at, def.length);
+			at += def.length;
+			raw[at++] = 0;
+			size = at;
+			if (count++ == 0) {
+				firstWord = word;
+			}
+			lastWord = word;
+		}
+
+		/**
+		 * Whether the block, compressed, is larger than {@code limit} bytes. It is
+		 * compressed only when the last measured size, plus the most the bytes
+		 * added since can add ({@link #maxDeflateGrowth}), could exceed the limit;
+		 * otherwise the answer is known to be no.
+		 */
+		boolean compressedOver(int limit) {
+			int knownSize = last.size < 0 ? 0 : last.size;
+			int knownLength = last.size < 0 ? 0 : last.length;
+			if (knownLength + maxDeflateGrowth(size - knownSize) <= limit) {
+				return false;
+			}
+			return compress().length > limit;
+		}
+
+		/**
+		 * The block without its last entry ({@code lastSize} bytes); that entry
+		 * then starts the next block.
+		 */
+		Block closeBeforeLast(int lastSize) {
+			int keep = size - lastSize;
+			byte[] word = lastWord;
+			// copied first: compressing the rest writes its terminator over it
+			byte[] entry = Arrays.copyOfRange(raw, keep, size);
+			size = keep;
+			Block block = close();
+			System.arraycopy(entry, 0, raw, 0, lastSize);
+			size = lastSize;
+			count = 1;
+			firstWord = word;
+			lastWord = word;
+			return block;
+		}
+
+		/** The block as it is now, compressed; then it is emptied. */
+		Block close() {
+			Compressed c = last.size == size ? last : previous.size == size ? previous : compress();
+			var block = new Block(firstWord, Arrays.copyOf(c.data, c.length));
+			size = 0;
+			count = 0;
+			firstWord = null;
+			lastWord = null;
+			last.size = -1;
+			previous.size = -1;
+			return block;
+		}
+
+		/** Compresses the block (entries + terminator) into {@code last}. */
+		private Compressed compress() {
+			raw[size] = 0; // terminator: elen=0x0000 signals end of block to firmware
+			raw[size + 1] = 0;
+			Compressed c = previous;
+			previous = last;
+			last = c;
+			deflater.reset();
+			deflater.setInput(raw, 0, size + 2);
+			deflater.finish();
+			c.length = 0;
+			while (!deflater.finished()) {
+				if (c.length == c.data.length) {
+					c.data = Arrays.copyOf(c.data, c.data.length * 2);
+				}
+				c.length += deflater.deflate(c.data, c.length, c.data.length - c.length);
+			}
+			c.size = size;
+			return c;
+		}
+
+		private void ensureRoom(int more) {
+			if (size + more > raw.length) {
+				raw = Arrays.copyOf(raw, Math.max(raw.length * 2, size + more));
 			}
 		}
-		if (!current.isEmpty())
-			blocks.add(compressBlock(current));
-		return blocks;
 	}
 
 	/** Join two definition byte arrays with a newline separator. */
@@ -555,27 +731,6 @@ public class ConvXdxf2Pbdic {
 		System.arraycopy(sep, 0, out, a.length, sep.length);
 		System.arraycopy(b, 0, out, a.length + sep.length, b.length);
 		return out;
-	}
-
-	static Block compressBlock(List<ParsedEntry> entries) throws IOException {
-		var raw = new ByteArrayOutputStream();
-		for (ParsedEntry e : entries) {
-			byte[] wBytes = e.word().getBytes(StandardCharsets.UTF_8);
-			int len = 2 + wBytes.length + 1 + e.definition().length + 1;
-			if (len > 0xFFFF)
-				len = 0xFFFF;
-			writeU16(raw, len);
-			raw.write(wBytes);
-			raw.write(0);
-			raw.write(e.definition());
-			raw.write(0);
-		}
-		// Terminator: elen=0x0000 signals end of block to firmware
-		raw.write(0);
-		raw.write(0);
-		byte[] rawBytes = raw.toByteArray();
-		byte[] compressed = deflate(rawBytes);
-		return new Block(entries.get(0).word().getBytes(StandardCharsets.UTF_8), compressed);
 	}
 
 	// ── 5. Word index ─────────────────────────────────────────────────────────
@@ -658,16 +813,19 @@ public class ConvXdxf2Pbdic {
 
 	static byte[] deflate(byte[] data) throws IOException {
 		var d = new Deflater(Deflater.DEFAULT_COMPRESSION, false);
-		d.setInput(data);
-		d.finish();
-		var out = new ByteArrayOutputStream(data.length / 2 + 64);
-		var buf = new byte[8192];
-		while (!d.finished()) {
-			int n = d.deflate(buf);
-			out.write(buf, 0, n);
+		try {
+			d.setInput(data);
+			d.finish();
+			var out = new ByteArrayOutputStream(data.length / 2 + 64);
+			var buf = new byte[8192];
+			while (!d.finished()) {
+				int n = d.deflate(buf);
+				out.write(buf, 0, n);
+			}
+			return out.toByteArray();
+		} finally {
+			d.end();
 		}
-		d.end();
-		return out.toByteArray();
 	}
 
 	// ── Integer write helpers ─────────────────────────────────────────────────
