@@ -1,5 +1,4 @@
 import java.io.BufferedWriter;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
@@ -127,11 +126,19 @@ public class ConvStardict2Tab {
 		// Read .dict(.dz)
 		byte[] dictData;
 		if (dictFile.toString().endsWith(".dz")) {
+			// read only the bytes the index refers to, straight into one array of that
+			// size (no growing buffer and copy)
+			int needed = 0;
+			for (var e : rawEntries)
+				needed = Math.max(needed, e.offset() + e.size());
 			try (var raw = Files.newInputStream(dictFile); // own variable: closed even if the gzip header is bad
-					var gzip = new GZIPInputStream(raw);
-					var baos = new ByteArrayOutputStream()) {
-				gzip.transferTo(baos);
-				dictData = baos.toByteArray();
+					var gzip = new GZIPInputStream(raw)) {
+				dictData = new byte[needed];
+				int read = gzip.readNBytes(dictData, 0, needed);
+				if (read < needed)
+					throw new IOException("Truncated: " + dictFile + " (" + read + " of " + needed + " bytes)");
+				// read to the end, so the gzip CRC check still runs
+				gzip.transferTo(OutputStream.nullOutputStream());
 			}
 		} else {
 			dictData = Files.readAllBytes(dictFile);

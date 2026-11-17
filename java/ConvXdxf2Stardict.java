@@ -1,6 +1,7 @@
 import static shared.TextHelper.lower;
 import static shared.XdxfHelper.parseXdxf;
 
+import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
@@ -197,63 +198,53 @@ public class ConvXdxf2Stardict {
 		File dictFile = new File(parentFile, filename + ".dict" + (compress ? ".dz" : ""));
 		File ifoFile = new File(parentFile, filename + ".ifo");
 
-		// Build .dict content and .idx simultaneously
+		// Write .idx and .dict while going through the entries, straight to the
+		// files: the dictionary is not copied into memory again (compressed, only
+		// the compressed chunks are kept until the end, see DictzipUtil)
 
-		ByteArrayOutputStream dictStrm;
-		ByteArrayOutputStream idxStrm;
-		{
-			dictStrm = new ByteArrayOutputStream();
-			idxStrm = new ByteArrayOutputStream();
+		long idxSize = 0;
+		if (compress) {
+			LOG.err("... compressing dict file");
+		}
+		try (var idxOut = new BufferedOutputStream(Files.newOutputStream(idxFile.toPath()));
+				var dictOut = new BufferedOutputStream(Files.newOutputStream(dictFile.toPath()));
+				var dz = compress ? new DictzipUtil.Compressor() : null) {
 			int offset = 0;
 			for (ParsedEntry e : entries) {
 				byte[] wordBytes = e.word().getBytes(StandardCharsets.UTF_8);
 				int size = e.definition().length;
 
 				// .idx: word\0 + 4-byte big-endian offset + 4-byte big-endian size
-				idxStrm.write(wordBytes);
-				idxStrm.write(0);
-				writeU32BE(idxStrm, offset);
-				writeU32BE(idxStrm, size);
+				idxOut.write(wordBytes);
+				idxOut.write(0);
+				writeU32BE(idxOut, offset);
+				writeU32BE(idxOut, size);
+				idxSize += wordBytes.length + 9;
 
 				// .dict: raw definition bytes
-				dictStrm.write(e.definition());
+				if (dz != null) {
+					dz.write(e.definition());
+				} else {
+					dictOut.write(e.definition());
+				}
 				offset += size;
 			}
-		}
-
-		// Build the .ifoPath file
-		ByteArrayOutputStream ifoStrm;
-		{
-			ifoStrm = new ByteArrayOutputStream();
-			var ifo = new StringBuilder();
-			ifo.append("StarDict's dict ifo file\n");
-			ifo.append("version=" + version + "\n");
-			ifo.append("wordcount=").append(entries.size()).append("\n");
-			ifo.append("idxfilesize=").append(idxStrm.size()).append("\n");
-			ifo.append("bookname=").append(name).append("\n");
-			ifo.append("description=").append(description).append("\n");
-			ifo.append("sametypesequence=h\n");
-			ifoStrm.write(ifo.toString().getBytes(StandardCharsets.UTF_8));
-		}
-
-		// Write all files
-
-		try (var ifoOut = Files.newOutputStream(ifoFile.toPath());
-				var idxOut = Files.newOutputStream(idxFile.toPath());
-				var dictOut = Files.newOutputStream(dictFile.toPath())) {
-
-			// Write .ifo
-			ifoStrm.writeTo(ifoOut);
-			// Write .idx
-			idxStrm.writeTo(idxOut);
-			// Write .dict
-			if (compress) {
-				LOG.err("... compressing dict file");
-				DictzipUtil.write(dictStrm, dictOut);
-			} else {
-				dictStrm.writeTo(dictOut);
+			if (dz != null) {
+				dz.finishTo(dictOut);
 			}
 		}
+
+		// Write .ifo (needs the size of the .idx)
+
+		var ifo = new StringBuilder();
+		ifo.append("StarDict's dict ifo file\n");
+		ifo.append("version=" + version + "\n");
+		ifo.append("wordcount=").append(entries.size()).append("\n");
+		ifo.append("idxfilesize=").append(idxSize).append("\n");
+		ifo.append("bookname=").append(name).append("\n");
+		ifo.append("description=").append(description).append("\n");
+		ifo.append("sametypesequence=h\n");
+		Files.writeString(ifoFile.toPath(), ifo, StandardCharsets.UTF_8);
 	}
 
 	// ── Helpers ───────────────────────────────────────────────────────────────
