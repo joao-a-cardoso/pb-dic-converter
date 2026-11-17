@@ -208,7 +208,3 @@ The `linux/` scripts are thin wrappers that delegate to `runjava`, which locates
 No compilation step is needed.
 
 The `chain-*` scripts source `linux/library.sh`, which holds what they share: argument handling (`-h`, the config file, `--def`), running from the project root, the config section check, the temporary TSV and the `[n/N]` step messages. A chain script itself only sets its name and number of steps and lists its tool calls.
-
----
-
-> **Legacy:** `dict-2-xdxf` (single-tool StarDict/tabfile → XDXF) is deprecated in favour of the modular toolchain above; `data/dict-2-xdf.conf` is its leftover config.
