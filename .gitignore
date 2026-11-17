@@ -9,3 +9,8 @@ windows/**/*
 .classpath
 .project
 /bin/
+
+# OpenJ9 dumps (written to the current folder on a crash or out of memory)
+Snap.*.trc
+javacore.*.txt
+heapdump.*.phd
