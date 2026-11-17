@@ -23,7 +23,11 @@ import java.util.zip.Deflater;
  *
  * Reference: RFC 1952 (gzip) + dictzip source (dict-1.x).
  */
-public class DictzipUtil {
+public final class DictzipUtil {
+
+	private DictzipUtil() {
+		// static members only: not instantiable (Effective Java, Item 4)
+	}
 
   /** Standard dictzip uncompressed chunk size (bytes). */
   private static final int CHUNK_SIZE = 58315;

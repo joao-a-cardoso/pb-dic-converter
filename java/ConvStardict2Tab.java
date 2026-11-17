@@ -1,10 +1,6 @@
-import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.ByteArrayOutputStream;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.nio.ByteBuffer;
@@ -19,6 +15,9 @@ import java.util.Properties;
 import java.util.zip.GZIPInputStream;
 
 import shared.ArgsHelper;
+import shared.IoHelper;
+import shared.CliException;
+import shared.ToolRunner;
 
 /**
  * stardict-2-tab — convert a StarDict dictionary to TSV
@@ -40,8 +39,7 @@ public class ConvStardict2Tab {
 	}
 
 	static void abort(String msg, Object... args) {
-		err(msg, args);
-		System.exit(1);
+		throw CliException.error(msg, args);
 	}
 
 	static void errRaw(String msg, Object... args) {
@@ -56,10 +54,14 @@ public class ConvStardict2Tab {
 	}
 
 	// ── main ──────────────────────────────────────────────────────────────────
-	public static void main(String[] args) throws Exception {
+	public static void main(String[] args) {
+		ToolRunner.run(TOOL, ConvStardict2Tab::usage, () -> run(args));
+	}
+
+	/** The tool's logic; ends with a {@link CliException} instead of {@code System.exit}. */
+	static void run(String[] args) throws Exception {
 		if (args.length == 0) { // -h / --help is handled by ArgsHelper.parse
-			ArgsHelper.displayUsage(ConvStardict2Tab::usage, System.err);
-			System.exit(1);
+			throw new CliException(null, 1, true);
 		}
 
 		var cli = parseArgs(args);
@@ -82,8 +84,8 @@ public class ConvStardict2Tab {
 
 		var entries = readStarDict(inFile);
 
-		OutputStream outStream = toStdout ? System.out : new FileOutputStream(output);
-		try (var writer = new BufferedWriter(new OutputStreamWriter(outStream, StandardCharsets.UTF_8))) {
+		try (OutputStream outStream = IoHelper.openOutput(output);
+				var writer = new BufferedWriter(new OutputStreamWriter(outStream, StandardCharsets.UTF_8))) {
 			for (var e : entries)
 				writer.write(e.word() + "\t" + e.definition().replace("\n", " ").replace("\t", " ") + "\n");
 		}
@@ -96,8 +98,7 @@ public class ConvStardict2Tab {
 	static List<Entry> readStarDict(Path ifoFile) throws Exception {
 		// Parse .ifo
 		var ifoProps = new Properties();
-		try (var r = new BufferedReader(
-				new InputStreamReader(new FileInputStream(ifoFile.toFile()), StandardCharsets.UTF_8))) {
+		try (var r = Files.newBufferedReader(ifoFile, StandardCharsets.UTF_8)) {
 			String firstLine = r.readLine();
 			if (!"StarDict's dict ifo file".equals(firstLine))
 				throw new IOException("Not a StarDict .ifo file: " + ifoFile);
@@ -141,7 +142,8 @@ public class ConvStardict2Tab {
 		// Read .dict(.dz)
 		byte[] dictData;
 		if (dictFile.toString().endsWith(".dz")) {
-			try (var gzip = new GZIPInputStream(new FileInputStream(dictFile.toFile()));
+			try (var raw = Files.newInputStream(dictFile); // own variable: closed even if the gzip header is bad
+					var gzip = new GZIPInputStream(raw);
 					var baos = new ByteArrayOutputStream()) {
 				gzip.transferTo(baos);
 				dictData = baos.toByteArray();

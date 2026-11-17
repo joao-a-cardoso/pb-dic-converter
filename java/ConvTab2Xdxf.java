@@ -1,8 +1,8 @@
 
 import java.io.BufferedReader;
-import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -12,6 +12,9 @@ import java.util.Map;
 import java.util.Properties;
 
 import shared.ArgsHelper;
+import shared.IoHelper;
+import shared.CliException;
+import shared.ToolRunner;
 import shared.LangHelper;
 import shared.XdxfHelper;
 import shared.XdxfHelper.XdxfEntry;
@@ -46,8 +49,7 @@ public class ConvTab2Xdxf {
 	}
 
 	static void abort(String msg, Object... args) {
-		err(msg, args);
-		System.exit(1);
+		throw CliException.error(msg, args);
 	}
 
 	static void errRaw(String msg, Object... args) {
@@ -56,10 +58,14 @@ public class ConvTab2Xdxf {
 	}
 
 	// ── main ──────────────────────────────────────────────────────────────────
-	public static void main(String[] args) throws Exception {
+	public static void main(String[] args) {
+		ToolRunner.run(TOOL, ConvTab2Xdxf::usage, () -> run(args));
+	}
+
+	/** The tool's logic; ends with a {@link CliException} instead of {@code System.exit}. */
+	static void run(String[] args) throws Exception {
 		if (args.length == 0) { // -h / --help is handled by ArgsHelper.parse
-			ArgsHelper.displayUsage(ConvTab2Xdxf::usage, System.err);
-			System.exit(1);
+			throw new CliException(null, 1, true);
 		}
 
 		var cli = parseArgs(args);
@@ -91,7 +97,10 @@ public class ConvTab2Xdxf {
 		argsHlp.listProperties(cli);
 
 		var header = new XdxfHeader(name, desc, lang3, langTo3, null);
-		var entries = fromStdin ? readTabfile(System.in) : readTabfile(new FileInputStream(input));
+		List<XdxfEntry> entries;
+		try (InputStream in = IoHelper.openInput(input)) {
+			entries = readTabfile(in);
+		}
 		if (toStdout && validate) {
 			// Write to temp file, validate, then stream to stdout
 			Path tmp = Files.createTempFile("tab2xdxf-", ".xdxf");
@@ -109,7 +118,9 @@ public class ConvTab2Xdxf {
 				Files.deleteIfExists(tmp);
 			}
 		} else if (toStdout) {
-			XdxfHelper.writeXdxf(header, entries, System.out, er -> err(er));
+			try (OutputStream out = IoHelper.openOutput(output)) {
+				XdxfHelper.writeXdxf(header, entries, out, er -> err(er));
+			}
 		} else
 			try (var out = Files.newOutputStream(outFile)) {
 				XdxfHelper.writeXdxf(header, entries, out, er -> err(er));
@@ -122,22 +133,22 @@ public class ConvTab2Xdxf {
 
 	// --- Tabfile reader ---
 
+	/** Reads the TSV from {@code stream}; the caller opened it and closes it. */
 	static List<XdxfEntry> readTabfile(InputStream stream) throws Exception {
 		var entries = new ArrayList<XdxfEntry>();
-		try (var reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
-			String line;
-			int lineNum = 0;
-			while ((line = reader.readLine()) != null) {
-				lineNum++;
-				if (line.isBlank() || line.startsWith("#"))
-					continue;
-				int tab = line.indexOf('\t');
-				if (tab == -1) {
-					err(String.format("Warning: line %d has no tab, skipping.", lineNum));
-					continue;
-				}
-				entries.add(new XdxfEntry(line.substring(0, tab).strip(), line.substring(tab + 1)));
+		var reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8));
+		String line;
+		int lineNum = 0;
+		while ((line = reader.readLine()) != null) {
+			lineNum++;
+			if (line.isBlank() || line.startsWith("#"))
+				continue;
+			int tab = line.indexOf('\t');
+			if (tab == -1) {
+				err(String.format("Warning: line %d has no tab, skipping.", lineNum));
+				continue;
 			}
+			entries.add(new XdxfEntry(line.substring(0, tab).strip(), line.substring(tab + 1)));
 		}
 		err(String.format("read %d entries.", entries.size()));
 		return entries;

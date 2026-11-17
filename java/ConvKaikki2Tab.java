@@ -1,10 +1,9 @@
 import static shared.Constants.UC_BULLET;
+import static shared.TextHelper.lower;
 import static shared.XmlHelper.encodeEntities;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -27,9 +26,13 @@ import java.util.regex.MatchResult;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import java.util.zip.GZIPInputStream;
 
 import shared.ArgsHelper;
+import shared.TermTranslator;
+import shared.IoHelper;
+import shared.CliException;
+import shared.ToolRunner;
+import shared.JsonException;
 import shared.JsonParser;
 
 /**
@@ -69,8 +72,7 @@ public class ConvKaikki2Tab {
 	}
 
 	static void abort(String msg, Object... args) {
-		err(msg, args);
-		System.exit(1);
+		throw CliException.error(msg, args);
 	}
 
 	static void errRaw(String msg, Object... args) {
@@ -79,10 +81,14 @@ public class ConvKaikki2Tab {
 	}
 
 	// ── main ──────────────────────────────────────────────────────────────────
-	public static void main(String[] args) throws Exception {
+	public static void main(String[] args) {
+		ToolRunner.run(TOOL, ConvKaikki2Tab::usage, () -> run(args));
+	}
+
+	/** The tool's logic; ends with a {@link CliException} instead of {@code System.exit}. */
+	static void run(String[] args) throws Exception {
 		if (args.length == 0) { // -h / --help is handled by ArgsHelper.parse
-			ArgsHelper.displayUsage(ConvKaikki2Tab::usage, System.err);
-			System.exit(1);
+			throw new CliException(null, 1, true);
 		}
 
 		var cli = parseArgs(args);
@@ -116,11 +122,7 @@ public class ConvKaikki2Tab {
 		}
 
 		argsHlp.listProperties(cli);
-		loadTermTranslations(termFile, termFileGiven);
-
-		// Detect gzip compression by extension
-		String fileName = inFile.getFileName().toString().toLowerCase();
-		boolean isGzip = fileName.endsWith(".gz");
+		TermTranslator terms = loadTermTranslations(termFile, termFileGiven);
 
 		int count = 0, filtered = 0, skipped = 0, duplicates = 0;
 		List<String> lstFilteredLang = new ArrayList<>();
@@ -129,16 +131,18 @@ public class ConvKaikki2Tab {
 		var seenEntries = new HashSet<String>();
 		var seenWords = new HashSet<String>();
 		var affectedWords = new HashSet<String>();
-		InputStream rawStream = new FileInputStream(inFile.toFile());
-		InputStream inStream = isGzip ? new GZIPInputStream(rawStream) : rawStream;
-		OutputStream outStream = toStdout ? System.out : new FileOutputStream(output);
-		try (var reader = new BufferedReader(new InputStreamReader(inStream, StandardCharsets.UTF_8));
+		// .gz input is decompressed by IoHelper; "-" output is stdout
+		try (InputStream inStream = IoHelper.openInput(input);
+				OutputStream outStream = IoHelper.openOutput(output);
+				var reader = new BufferedReader(new InputStreamReader(inStream, StandardCharsets.UTF_8));
 				var writer = new BufferedWriter(new OutputStreamWriter(outStream, StandardCharsets.UTF_8))) {
 
 			Map<String, CharSequence> mapExprsToEmitSeparate = null;
 
 			String line;
+			int lineNo = 0;
 			while ((line = reader.readLine()) != null) {
+				lineNo++;
 				line = line.strip();
 				if (strIsEmpty(line))
 					continue;
@@ -150,7 +154,7 @@ public class ConvKaikki2Tab {
 					if (!lang.equalsIgnoreCase(wordLang)) {
 						filtered++;
 						if (!lstFilteredLang.contains(wordLang)) {
-							lstFilteredLang.add(wordLang == null ? "<null>" : wordLang.toLowerCase());
+							lstFilteredLang.add(wordLang == null ? "<null>" : lower(wordLang));
 						}
 						continue;
 					}
@@ -162,7 +166,7 @@ public class ConvKaikki2Tab {
 					}
 
 					// Main entry
-					String def = buildDefinition(word, entry, emitEmbedded);
+					String def = buildDefinition(terms, word, entry, emitEmbedded);
 					if (!strIsEmpty(def)) {
 						String lin = word + "\t" + sanitize(def);
 						seenWords.add(word);
@@ -182,12 +186,12 @@ public class ConvKaikki2Tab {
 						if (mapExprsToEmitSeparate == null) {
 							mapExprsToEmitSeparate = new LinkedHashMap<>();
 						}
-						mapExprsToEmitSeparate.putAll(prepareExpressionsToEmit(entry, word));
+						mapExprsToEmitSeparate.putAll(prepareExpressionsToEmit(terms, entry, word));
 					} // end if (emitSeparate)
 
-				} catch (Exception e) {
-					err(String.format("Warning: skipping malformed line: %s", e.getMessage()));
-					e.printStackTrace();
+				} catch (JsonException e) {
+					// bad input: skip the line; anything else is a bug and stops the run (ToolRunner)
+					err(String.format("Warning: skipping malformed line %d: %s", lineNo, e.getMessage()));
 					skipped++;
 				}
 			} // while
@@ -220,7 +224,7 @@ public class ConvKaikki2Tab {
 
 	// --- Definition builder ---
 
-	static String buildDefinition(String word, Map<String, ?> entry, boolean emitEmbedded) {
+	static String buildDefinition(TermTranslator terms, String word, Map<String, ?> entry, boolean emitEmbedded) {
 
 		boolean keepExpressionsWithEmptyContent = true;
 
@@ -236,7 +240,7 @@ public class ConvKaikki2Tab {
 				String posTitle = getStr(entry, "pos_title");
 				gloss = encodeEntities(false, gloss);
 				if (posTitle != null) {
-					posTitle = translateTermCap(posTitle);
+					posTitle = translateTermCap(terms, posTitle);
 					if (shortFormOf) {
 						return "<p>" + formatTitle(false, posTitle) + " - " + gloss + "</p>";
 					} else {
@@ -258,13 +262,13 @@ public class ConvKaikki2Tab {
 		if (posTitle == null) {
 			posTitle = getStr(entry, "pos");
 		}
-		posTitle = properNounTitle(entry, posTitle, senses);
+		posTitle = properNounTitle(terms, entry, posTitle, senses);
 		String gender = tags.contains("masculine") ? "masculine" : tags.contains("feminine") ? "feminine" : null;
 
 		if (posTitle != null) {
 			sbDef.append("<p>" + formatTitle(true, posTitle));
 			if (gender != null)
-				sbDef.append(" (").append(translateTerm(gender)).append(")");
+				sbDef.append(" (").append(translateTerm(terms, gender)).append(")");
 			sbDef.append("</p>");
 		}
 
@@ -281,7 +285,7 @@ public class ConvKaikki2Tab {
 				}
 			}
 			if (!plurals.isEmpty()) {
-				sbDef.append("<p>" + formatLabel("plural"))
+				sbDef.append("<p>" + formatLabel(terms, "plural"))
 						.append(encodeEntities(false, String.join(", ", plurals)))//
 						.append("</p>");
 			}
@@ -299,7 +303,7 @@ public class ConvKaikki2Tab {
 			}
 
 			if (!ipas.isEmpty()) {
-				sbDef.append("<p>" + formatLabel("sounds"))
+				sbDef.append("<p>" + formatLabel(terms, "sounds"))
 						.append(encodeEntities(true, String.join(", ", ipas)))//
 						.append("</p>");
 			}
@@ -310,7 +314,7 @@ public class ConvKaikki2Tab {
 		for (var sense : senses) {
 
 			sbDef.append("<li>");
-			sbDef.append(buildDomainText(sense));
+			sbDef.append(buildDomainText(terms, sense));
 
 			// Glosses
 			String gloss = extractGloss(sense);
@@ -319,7 +323,7 @@ public class ConvKaikki2Tab {
 			}
 
 			// Example
-			sbDef.append(buildExampleText(sense, word, plurals));
+			sbDef.append(buildExampleText(terms, sense, word, plurals));
 			sbDef.append("</li>");
 		}
 		sbDef.append("</ol>");
@@ -331,16 +335,16 @@ public class ConvKaikki2Tab {
 			if (etym.startsWith(":"))
 				etym = etym.substring(1).strip();
 			sbDef.append("<p>")//
-					.append(formatLabel("ethymology"))//
+					.append(formatLabel(terms, "ethymology"))//
 					.append(encodeEntities(false, etym))//
 					.append("</p>");
 		}
 
 		// 6. Expressions (embedded)
 		if (emitEmbedded) {
-			List<String> exprTexts = buildEmbeddedExpressionsText(entry, keepExpressionsWithEmptyContent);
+			List<String> exprTexts = buildEmbeddedExpressionsText(terms, entry, keepExpressionsWithEmptyContent);
 			if (!listIsEmpty(exprTexts)) {
-				sbDef.append("<p>" + formatTitle(false, translateTermCap("expressions")) + "</p>")//
+				sbDef.append("<p>" + formatTitle(false, translateTermCap(terms, "expressions")) + "</p>")//
 						.append("<ul>");
 				for (String et : exprTexts) {
 					sbDef.append("<li>").append(et).append("</li>");
@@ -355,7 +359,7 @@ public class ConvKaikki2Tab {
 	// --- Helpers ---
 
 	/** Prepare a list with expressions to be embedded in a definition */
-	private static List<String> buildEmbeddedExpressionsText(Map<String, ?> entry,
+	private static List<String> buildEmbeddedExpressionsText(TermTranslator terms, Map<String, ?> entry,
 			boolean keepExpressionsWithEmptyContent) {
 
 		var exprTexts = new ArrayList<String>();
@@ -379,7 +383,7 @@ public class ConvKaikki2Tab {
 				if (!listIsEmpty(exprSenses)) {
 					var sbEmbed = new StringBuilder();
 					Map<String, ?> exprSense = exprSenses.get(0); // just the first sense
-					sbEmbed.append(buildDomainText(exprSense));
+					sbEmbed.append(buildDomainText(terms, exprSense));
 
 					String exprGloss = extractGloss(exprSense);
 					if (!strIsEmpty(exprGloss)) {
@@ -397,7 +401,7 @@ public class ConvKaikki2Tab {
 	}
 
 	/** Prepare a map with expressions to emit, related to a given ref. word */
-	static Map<String, CharSequence> prepareExpressionsToEmit(Map<String, ?> entry, String refWord) {
+	static Map<String, CharSequence> prepareExpressionsToEmit(TermTranslator terms, Map<String, ?> entry, String refWord) {
 		Map<String, CharSequence> mapResult = new LinkedHashMap<>();
 		List<Map<String, ?>> expressions = getList(entry, "expressions", null);
 		for (var expr : expressions) {
@@ -414,7 +418,7 @@ public class ConvKaikki2Tab {
 				continue;
 
 			var sb = new StringBuilder();
-			sb.append("<p>").append(formatTitle(true, translateTermCap("expression")));
+			sb.append("<p>").append(formatTitle(true, translateTermCap(terms, "expression")));
 			if (!strIsEmpty(refWord)) {
 				sb.append(" (").append(refWord).append(")");
 			}
@@ -422,14 +426,14 @@ public class ConvKaikki2Tab {
 			sb.append("<ol>");
 			for (var sense : exprSenses) {
 				sb.append("<li>");
-				sb.append(buildDomainText(sense));
+				sb.append(buildDomainText(terms, sense));
 
 				String gloss = extractGloss(sense);
 				if (!strIsEmpty(gloss)) {
 					sb.append(encodeEntities(false, gloss));
 				}
 
-				sb.append(buildExampleText(sense, exprWord, null));
+				sb.append(buildExampleText(terms, sense, exprWord, null));
 				sb.append("</li>");
 			}
 			sb.append("</ol>");
@@ -504,20 +508,20 @@ public class ConvKaikki2Tab {
 	 * names as plain nouns), is titled with the translation of "proper-noun". Without
 	 * such a translation the source's own title is kept.
 	 */
-	static String properNounTitle(Map<String, ?> entry, String posTitle, List<Map<String, ?>> senses) {
+	static String properNounTitle(TermTranslator terms, Map<String, ?> entry, String posTitle, List<Map<String, ?>> senses) {
 		String pos = getStr(entry, "pos");
 		boolean properNoun = "name".equals(pos) || ("noun".equals(pos) && !listIsEmpty(senses)
 				&& senses.stream().allMatch(sense -> getList(sense, "topics", null).stream()
 						.anyMatch(t -> "anthroponym".equalsIgnoreCase(String.valueOf(t)))));
-		if (!properNoun || !termTranslations.containsKey(PROPER_NOUN_KEY)) {
+		if (!properNoun || !terms.has(PROPER_NOUN_KEY)) {
 			return posTitle;
 		}
-		return translateRaw(PROPER_NOUN_KEY).substring(0, 1).toUpperCase() + translateRaw(PROPER_NOUN_KEY).substring(1);
+		return terms.translateCap(PROPER_NOUN_KEY);
 	}
 
 	/** Inline label: "<i>Label:</i> " — translated, capitalised, colon inside the italics. */
-	static String formatLabel(String term) {
-		return "<i>" + translateTermCap(term) + ":</i> ";
+	static String formatLabel(TermTranslator terms, String term) {
+		return "<i>" + translateTermCap(terms, term) + ":</i> ";
 	}
 
 	static String formatTitle(boolean big, String title) {
@@ -531,7 +535,7 @@ public class ConvKaikki2Tab {
 	}
 
 	/** Build text representing examples for the given sense */
-	static String buildExampleText(Map<String, ?> sense, String refWord, List<String> refPlurals) {
+	static String buildExampleText(TermTranslator terms, Map<String, ?> sense, String refWord, List<String> refPlurals) {
 
 		if (strIsEmpty(refWord)) {
 			return "";
@@ -630,7 +634,7 @@ public class ConvKaikki2Tab {
 			quoteText = "\"" + quoteText + "\"";
 		}
 		sb.append(" <small><i>(")//
-				.append(translateTerm("example") + ": ")//
+				.append(translateTerm(terms, "example") + ": ")//
 				.append(quoteText)//
 				.append(")</i></small>");
 
@@ -688,7 +692,7 @@ public class ConvKaikki2Tab {
 	}
 
 	/** Returns domain label from topics, falling back to rawtags. */
-	static String buildDomainText(Map<String, ?> sense) {
+	static String buildDomainText(TermTranslator terms, Map<String, ?> sense) {
 
 		var domains = listDomains(sense);
 
@@ -696,13 +700,11 @@ public class ConvKaikki2Tab {
 			return "";
 
 		String result = domains.stream()//
-				.map(el -> translateTermCap(el))//
+				.map(el -> translateTermCap(terms, el))//
 				.collect(Collectors.joining(", "));
 		return " <i>[" + result + "]</i> ";
 	}
 
-	/** Label translations (english term in lower case → translation). */
-	static Map<String, String> termTranslations = Map.of();
 
 	/**
 	 * Default translation file: {@code term-translations_<lang>.properties} in the
@@ -720,59 +722,32 @@ public class ConvKaikki2Tab {
 	 * --terms-file must exist; a missing default file only means that labels
 	 * are not translated.
 	 */
-	static void loadTermTranslations(Path file, boolean given) throws Exception {
+	static TermTranslator loadTermTranslations(Path file, boolean given) throws Exception {
 		if (!Files.exists(file)) {
 			if (given) {
 				abort("Error: term translation file not found: %s", file);
 			}
 			err("Term translations: none (%s not found) — labels are not translated", ArgsHelper.displayPath(file.toString()));
-			return;
+			return TermTranslator.none();
 		}
-		var props = new Properties();
-		try (var r = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-			props.load(r);
-		}
-		var map = new LinkedHashMap<String, String>();
-		for (String key : props.stringPropertyNames()) {
-			map.put(key.trim().toLowerCase(java.util.Locale.ROOT), props.getProperty(key).trim());
-		}
-		termTranslations = map;
-		err("Term translations: %s (%d terms)", ArgsHelper.displayPath(file.toString()), map.size());
-	}
-
-	/**
-	 * Returns the translated term (case-insensitive lookup), falling back to the
-	 * received one. Not escaped for xml.
-	 */
-	static String translateRaw(Object term) {
-		String strTerm = term == null ? null : term.toString().trim();
-
-		if (strIsEmpty(strTerm))
-			return "";
-
-		String result = termTranslations.get(strTerm.toLowerCase(java.util.Locale.ROOT));
-		return result != null ? result : strTerm;
+		TermTranslator terms = TermTranslator.load(file);
+		err("Term translations: %s (%d terms)", ArgsHelper.displayPath(file.toString()), terms.size());
+		return terms;
 	}
 
 	/**
 	 * Returns translated term, falling back to received one. Not escaped for xml.
 	 */
-	static String translateTerm(Object term) {
-		String result = translateRaw(term);
-		return encodeEntities(false, result);
+	static String translateTerm(TermTranslator terms, Object term) {
+		return encodeEntities(false, terms.translate(term));
 	}
 
 	/**
 	 * Returns translated term returning with capital first, falling back to
 	 * received one.
 	 */
-	static String translateTermCap(Object term) {
-		String result = translateRaw(term);
-
-		// by default return the received translateTerm
-		result = result == null ? result : result.substring(0, 1).toUpperCase() + result.substring(1);
-
-		return encodeEntities(false, result);
+	static String translateTermCap(TermTranslator terms, Object term) {
+		return encodeEntities(false, terms.translateCap(term));
 	}
 
 	/** Collapses internal newlines and tabs — TSV requires one line per entry. */

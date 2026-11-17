@@ -1,5 +1,8 @@
 package shared;
 
+import static shared.TextHelper.lower;
+import static shared.TextHelper.upper;
+
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -97,8 +100,7 @@ public class ArgsHelper {
 			Consumer<String> logger, Supplier<String> usage) {
 		for (String arg : args) {
 			if (arg.equals("-h") || arg.equals("--help")) {
-				displayUsage(usage, System.out);
-				System.exit(0);
+				throw CliException.help();
 			}
 		}
 		var map = new LinkedHashMap<String, String>();
@@ -124,9 +126,7 @@ public class ArgsHelper {
 	}
 
 	private static void fail(Consumer<String> logger, Supplier<String> usage, String msg) {
-		logger.accept(msg);
-		displayUsage(usage, System.err);
-		System.exit(1);
+		throw CliException.usageError(msg);
 	}
 
 	/**
@@ -197,13 +197,11 @@ public class ArgsHelper {
 			for (String def : raw.split("\0")) {
 				var m = CLI_DEF.matcher(def);
 				if (!m.matches()) {
-					log("Error: invalid --def '%s', expected: --def <name>=<value>", def);
-					System.exit(1);
+					throw CliException.error("Error: invalid --def '%s', expected: --def <name>=<value>", def);
 				}
 				String name = m.group(1);
 				if (cliDefs.containsKey(name)) {
-					log("Error: variable '%s' given twice with --def", name);
-					System.exit(1);
+					throw CliException.error("Error: variable '%s' given twice with --def", name);
 				}
 				cliDefs.put(name, m.group(2));
 				cli.put("def " + name, m.group(2));
@@ -224,10 +222,10 @@ public class ArgsHelper {
 		if (configPath != null) {
 			Path path = Path.of(configPath);
 			if (!Files.exists(path)) {
-				log("Error: config not found: %s", path);
 				if (exitWhenFailed) {
-					System.exit(1);
+					throw CliException.error("Error: config not found: %s", path);
 				}
+				log("Error: config not found: %s", path);
 				return props;
 			}
 			var defs = new LinkedHashMap<String, String>();
@@ -325,8 +323,7 @@ public class ArgsHelper {
 	}
 
 	private void configError(Path path, String msg, Object... args) {
-		log("Error: config %s: %s", path, String.format(msg, args));
-		System.exit(1);
+		throw CliException.error("Error: config %s: %s", path, String.format(msg, args));
 	}
 
 	/** A key is prefixed when it has a namespace, e.g. {@code tab2xdxf.in}. */
@@ -345,8 +342,8 @@ public class ArgsHelper {
 		if (names.stream().anyMatch(ArgsHelper::isPrefixed)) {
 			var bare = names.stream().filter(k -> !isPrefixed(k)).sorted().toList();
 			if (!bare.isEmpty()) {
-				log("Error: config %s mixes prefixed and bare keys; add a prefix to: %s", path, String.join(", ", bare));
-				System.exit(1);
+				throw CliException.error("Error: config %s mixes prefixed and bare keys; add a prefix to: %s", path,
+						String.join(", ", bare));
 			}
 		}
 	}
@@ -412,38 +409,32 @@ public class ArgsHelper {
 	public String require(Map<String, String> cli, String key, String desc) {
 		String val = cli.get(key);
 		if (val == null) {
-			log("Error: missing required argument %s", desc);
-			displayUsage(usage, System.err);
-			System.exit(1);
+			throw CliException.usageError("Error: missing required argument %s", desc);
 		}
 		return val;
 	}
 
 	public String requireUC(Map<String, String> cli, String key, String desc) {
 		String val = require(cli, key, desc);
-		return val == null ? null : val.toUpperCase();
+		return upper(val);
 	}
 
 	public Integer requireInt(Map<String, String> cli, String key, String desc) {
 		String val = require(cli, key, desc);
 		try {
 			return Integer.parseInt(val);
-		} catch (Exception e) {
-			log("Invalid integer value for '%s': %s", key, val);
-			System.exit(1);
-			return null;
+		} catch (NumberFormatException e) {
+			throw CliException.error("Invalid integer value for '%s': %s", key, val);
 		}
 	}
 
 	public Boolean requireBool(Map<String, String> cli, String key, String desc) {
 		String val = require(cli, key, desc);
-		return switch (val.toLowerCase()) {
+		return switch (lower(val)) {
 		case "true" -> true;
 		case "false" -> false;
 		default -> {
-			log("Invalid boolean value for '%s': %s", key, val);
-			System.exit(1);
-			yield null;
+			throw CliException.error("Invalid boolean value for '%s': %s", key, val);
 		}
 		};
 	}
@@ -474,9 +465,9 @@ public class ArgsHelper {
 
 	private String checkLang(Map<String, String> cli, String key, String desc, String val) {
 		if (!LangHelper.validIso2(val)) {
-			log("Error: invalid language code '%s' for %s: expected a two-letter ISO 639-1 code (e.g. pt, en)", val,
+			throw CliException.error(
+					"Error: invalid language code '%s' for %s: expected a two-letter ISO 639-1 code (e.g. pt, en)", val,
 					desc);
-			System.exit(1);
 		}
 		String code = LangHelper.normalize(val);
 		cli.put(key, code);
@@ -485,7 +476,7 @@ public class ArgsHelper {
 
 	public String resolveUC(Map<String, String> cli, String key, String def) {
 		String val = resolve(cli, key, def);
-		return val == null ? null : val.toUpperCase();
+		return upper(val);
 	}
 
 	public Integer resolveInt(Map<String, String> cli, String key, Integer def) {
@@ -500,10 +491,8 @@ public class ArgsHelper {
 
 		try {
 			return Integer.parseInt(val);
-		} catch (Exception e) {
-			log("Invalid integer value for '%s': %s", key, val);
-			System.exit(1);
-			return null;
+		} catch (NumberFormatException e) {
+			throw CliException.error("Invalid integer value for '%s': %s", key, val);
 		}
 	}
 
@@ -517,13 +506,11 @@ public class ArgsHelper {
 			return def;
 		}
 
-		return switch (val.toLowerCase()) {
+		return switch (lower(val)) {
 		case "true" -> true;
 		case "false" -> false;
 		default -> {
-			log("Invalid boolean value for '%s': %s", key, val);
-			System.exit(1);
-			yield null;
+			throw CliException.error("Invalid boolean value for '%s': %s", key, val);
 		}
 		};
 	}

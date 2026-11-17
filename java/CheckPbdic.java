@@ -19,6 +19,8 @@ import org.xml.sax.InputSource;
 import org.xml.sax.helpers.DefaultHandler;
 
 import shared.ArgsHelper;
+import shared.CliException;
+import shared.ToolRunner;
 
 /**
  * check-pbdic — validate a PocketBook .dic file against its source XDXF.
@@ -86,10 +88,14 @@ public class CheckPbdic {
 	}
 
 	// ── main ──────────────────────────────────────────────────────────────────
-	public static void main(String[] args) throws Exception {
+	public static void main(String[] args) {
+		ToolRunner.run(TOOL, CheckPbdic::usage, () -> run(args));
+	}
+
+	/** The tool's logic; ends with a {@link CliException} instead of {@code System.exit}. */
+	static void run(String[] args) throws Exception {
 		if (args.length == 0) { // -h / --help is handled by ArgsHelper.parse
-			ArgsHelper.displayUsage(CheckPbdic::usage, System.err);
-			System.exit(1);
+			throw new CliException(null, 1, true);
 		}
 
 		var argsHlp = new ArgsHelper(TOOL, "checkpbdic", er -> err(er), () -> usage());
@@ -118,7 +124,7 @@ public class CheckPbdic {
 			}
 		}
 		if (inputMissing) {
-			System.exit(1);
+			throw new CliException(null, 1, false); // messages already logged
 		}
 
 		argsHlp.listProperties(cli);
@@ -406,7 +412,9 @@ public class CheckPbdic {
 		int total = passed + failed + warned;
 		err(String.format("Result: %d passed, %d failed, %d warnings  (%d checks)", passed, failed, warned, total));
 		err("────────────────────────────────────");
-		System.exit(failed > 0 ? 1 : 0);
+		if (failed > 0) {
+			throw new CliException(null, 1, false); // result already logged
+		}
 	}
 
 	// ── .dic parser ───────────────────────────────────────────────────────────

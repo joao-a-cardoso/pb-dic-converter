@@ -1,8 +1,14 @@
 package shared;
 
+import static shared.TextHelper.lower;
+
 import java.util.Set;
 
-public class XmlHelper {
+public final class XmlHelper {
+
+	private XmlHelper() {
+		// static members only: not instantiable (Effective Java, Item 4)
+	}
 
 	static final Set<String> ALLOWED_TAGS = Set.of("p", "b", "i", "u", "em", "strong", "big", "small", "ol", "ul", "li",
 			"sub", "sup", "br", "a", "div", "span", "table", "tr", "td", "th");
@@ -79,7 +85,7 @@ public class XmlHelper {
 				boolean closing = inner.startsWith("/");
 
 				// Extract tag name, ignoring attributes and self-close slash
-				String tag = (closing ? inner.substring(1) : inner).split("[\\s/]")[0].toLowerCase();
+				String tag = lower((closing ? inner.substring(1) : inner).split("[\\s/]")[0]);
 
 				if (ALLOWED_TAGS.contains(tag)) {
 					if (VOID_TAGS.contains(tag))
@@ -185,7 +191,7 @@ public class XmlHelper {
 					continue; // comment, <!DOCTYPE>, <?…?>: dropped
 				}
 				boolean closing = !m.group(1).isEmpty();
-				String tag = m.group(2).toLowerCase(java.util.Locale.ROOT);
+				String tag = lower(m.group(2));
 				if (!ALLOWED_TAGS.contains(tag)) {
 					continue; // unknown tag: dropped, its text is kept
 				}

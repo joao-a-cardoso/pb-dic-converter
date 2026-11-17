@@ -1,5 +1,8 @@
 package shared;
 
+import static shared.TextHelper.lower;
+import static shared.TextHelper.upper;
+
 import java.util.Locale;
 import java.util.Set;
 
@@ -7,14 +10,18 @@ import java.util.Set;
  * Language codes: two-letter ISO 639-1 codes (e.g. pt, en), accepted in any
  * case (language codes are case-insensitive) and used in lower case.
  */
-public class LangHelper {
+public final class LangHelper {
+
+	private LangHelper() {
+		// static members only: not instantiable (Effective Java, Item 4)
+	}
 
 	/** All ISO 639-1 codes known to the JDK (lower case). */
 	private static final Set<String> ISO2 = Set.of(Locale.getISOLanguages());
 
 	/** Trims and lower-cases a language code; {@code null} stays {@code null}. */
 	public static String normalize(String lang) {
-		return lang == null ? null : lang.trim().toLowerCase(Locale.ROOT);
+		return lang == null ? null : lower(lang.trim());
 	}
 
 	/** True when {@code lang} is a two-letter ISO 639-1 code, in any case. */
@@ -31,7 +38,7 @@ public class LangHelper {
 		String code = normalize(lang);
 		if (code == null)
 			return "ENG";
-		return Locale.of(code).getISO3Language().toUpperCase(Locale.ROOT);
+		return upper(Locale.of(code).getISO3Language());
 	}
 
 }

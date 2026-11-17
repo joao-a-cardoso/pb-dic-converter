@@ -1,8 +1,8 @@
+import static shared.TextHelper.lower;
 import static shared.XdxfHelper.parseXdxf;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -13,12 +13,14 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.stream.Collectors;
 
 import shared.ArgsHelper;
+import shared.IoHelper;
+import shared.CliException;
+import shared.ToolRunner;
 import shared.DictzipUtil;
 import shared.XdxfHelper.ParsedEntry;
 import shared.XdxfHelper.XdxfHeader;
@@ -60,8 +62,7 @@ public class ConvXdxf2Stardict {
 	}
 
 	static void abort(String msg, Object... args) {
-		err(msg, args);
-		System.exit(1);
+		throw CliException.error(msg, args);
 	}
 
 	static void errRaw(String msg, Object... args) {
@@ -70,10 +71,14 @@ public class ConvXdxf2Stardict {
 	}
 
 	// ── main ──────────────────────────────────────────────────────────────────
-	public static void main(String[] args) throws Exception {
+	public static void main(String[] args) {
+		ToolRunner.run(TOOL, ConvXdxf2Stardict::usage, () -> run(args));
+	}
+
+	/** The tool's logic; ends with a {@link CliException} instead of {@code System.exit}. */
+	static void run(String[] args) throws Exception {
 		if (args.length == 0) { // -h / --help is handled by ArgsHelper.parse
-			ArgsHelper.displayUsage(ConvXdxf2Stardict::usage, System.err);
-			System.exit(1);
+			throw new CliException(null, 1, true);
 		}
 
 		var cli = parseArgs(args);
@@ -106,7 +111,7 @@ public class ConvXdxf2Stardict {
 		err("Parsing...");
 		var header = new XdxfHeader[1];
 		var entries = new ArrayList<ParsedEntry>();
-		try (InputStream input = fromStdin ? System.in : Files.newInputStream(xdxfFile)) {
+		try (InputStream input = IoHelper.openInput(inPath)) {
 			int count = parseXdxf(input, //
 					ConvXdxf2Stardict::htmlToSdic, //
 					hdr -> header[0] = hdr, //
@@ -129,7 +134,7 @@ public class ConvXdxf2Stardict {
 
 		// 2. Sort alphabetically (case-insensitive)
 		err("Sorting...");
-		entries.sort(Comparator.comparing((ParsedEntry e) -> e.word().toLowerCase(Locale.ROOT))
+		entries.sort(Comparator.comparing((ParsedEntry e) -> lower(e.word()))
 				.thenComparing(e -> e.word()));
 
 		// 3. Merge/dedup
@@ -145,7 +150,7 @@ public class ConvXdxf2Stardict {
 					if (!sameDef && !mergeDefs.equals("NEVER")) {
 						merged.remove(merged.size() - 1);
 						String keepWord = mergeDefs.equals("ALWAYS")
-								? (prev.word().equals(prev.word().toLowerCase(Locale.ROOT)) ? prev.word() : e.word())
+								? (prev.word().equals(lower(prev.word())) ? prev.word() : e.word())
 								: prev.word();
 						merged.add(new ParsedEntry(keepWord, joinDefs(prev.definition(), e.definition())));
 					} else if (sameDef) {
@@ -248,9 +253,9 @@ public class ConvXdxf2Stardict {
 
 		// Write all files
 
-		try (var ifoOut = new FileOutputStream(ifoFile);
-				var idxOut = new FileOutputStream(idxFile);
-				var dictOut = new FileOutputStream(dictFile);) {
+		try (var ifoOut = Files.newOutputStream(ifoFile.toPath());
+				var idxOut = Files.newOutputStream(idxFile.toPath());
+				var dictOut = Files.newOutputStream(dictFile.toPath())) {
 
 			// Write .ifo
 			ifoStrm.writeTo(ifoOut);

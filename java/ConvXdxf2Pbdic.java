@@ -1,9 +1,10 @@
 
+import static shared.TextHelper.lower;
+import static shared.TextHelper.upper;
 import static shared.XmlHelper.decodeEntities;
 
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -20,6 +21,9 @@ import java.util.TreeMap;
 import java.util.zip.Deflater;
 
 import shared.ArgsHelper;
+import shared.IoHelper;
+import shared.CliException;
+import shared.ToolRunner;
 import shared.Constants;
 import shared.XdxfHelper;
 import shared.XdxfHelper.ParsedEntry;
@@ -60,10 +64,14 @@ public class ConvXdxf2Pbdic {
 													// limit
 
 	// ── main ──────────────────────────────────────────────────────────────────
-	public static void main(String[] args) throws Exception {
+	public static void main(String[] args) {
+		ToolRunner.run(TOOL, ConvXdxf2Pbdic::usage, () -> run(args));
+	}
+
+	/** The tool's logic; ends with a {@link CliException} instead of {@code System.exit}. */
+	static void run(String[] args) throws Exception {
 		if (args.length == 0) { // -h / --help is handled by ArgsHelper.parse
-			ArgsHelper.displayUsage(ConvXdxf2Pbdic::usage, System.err);
-			System.exit(1);
+			throw new CliException(null, 1, true);
 		}
 
 		var cli = parseArgs(args);
@@ -88,11 +96,11 @@ public class ConvXdxf2Pbdic {
 		if (!Files.isDirectory(langDirPath)) {
 			err(String.format("Error: language directory not found: %s", langDirPath));
 			errRaw("       Download from: https://github.com/Markismus/LanguageFilesPocketbookConverter");
-			System.exit(1);
+			throw new CliException(null, 1, false); // messages already logged
 		}
 
 		String mergeDefs = argsHlp.requireUC(cli, "merge-defs", "--merge-defs/-m");
-		mergeDefs = mergeDefs.toUpperCase();
+		mergeDefs = upper(mergeDefs);
 		if (!mergeDefs.equals("ALWAYS") && !mergeDefs.equals("EXACT") && !mergeDefs.equals("NEVER")) {
 			abort(String.format("Error: -m / --merge-defs must be ALWAYS, EXACT or NEVER, got: %s", mergeDefs));
 		}
@@ -110,7 +118,7 @@ public class ConvXdxf2Pbdic {
 		err("Parsing...");
 		var header = new XdxfHeader[1];
 		var entries = new ArrayList<ParsedEntry>();
-		try (InputStream input = fromStdin ? System.in : Files.newInputStream(xdxfPath)) {
+		try (InputStream input = IoHelper.openInput(inPath)) {
 			int count = XdxfHelper.parseXdxf(input, //
 					ConvXdxf2Pbdic::htmlToSdic, //
 					hdr -> header[0] = hdr, //
@@ -156,7 +164,7 @@ public class ConvXdxf2Pbdic {
 					if (!sameDef && !mergeDefs.equals("NEVER")) {
 						// ALWAYS: keep lowercase headword; EXACT: keep first
 						String keepWord = mergeDefs.equals("ALWAYS")
-								? (prev.word().equals(prev.word().toLowerCase(java.util.Locale.ROOT)) ? prev.word()
+								? (prev.word().equals(lower(prev.word())) ? prev.word()
 										: e.word())
 								: prev.word();
 						byte[] joined = joinDefsBlankLine(prev.definition(), e.definition());
@@ -289,7 +297,7 @@ public class ConvXdxf2Pbdic {
 					appendUtf8(out, html.substring(i));
 					break;
 				}
-				String tag = html.substring(i + 1, end).toString().trim().toLowerCase();
+				String tag = lower(html.substring(i + 1, end).toString().trim());
 				boolean closing = tag.startsWith("/");
 				boolean opening = !closing;
 
@@ -399,7 +407,29 @@ public class ConvXdxf2Pbdic {
 
 	// ── 4. Block packer ───────────────────────────────────────────────────────
 
+	/**
+	 * A compressed block and the first headword it contains (UTF-8). The arrays
+	 * are shared, not copied, and must not be modified; {@code equals},
+	 * {@code hashCode} and {@code toString} use their contents (records would
+	 * compare arrays by identity).
+	 */
 	record Block(byte[] firstWordUtf8, byte[] container) {
+		@Override
+		public boolean equals(Object o) {
+			return o instanceof Block other && Arrays.equals(firstWordUtf8, other.firstWordUtf8)
+					&& Arrays.equals(container, other.container);
+		}
+
+		@Override
+		public int hashCode() {
+			return 31 * Arrays.hashCode(firstWordUtf8) + Arrays.hashCode(container);
+		}
+
+		@Override
+		public String toString() {
+			return "Block[firstWord=" + new String(firstWordUtf8, StandardCharsets.UTF_8) + ", container="
+					+ container.length + " bytes]";
+		}
 	}
 
 	/**
@@ -581,7 +611,7 @@ public class ConvXdxf2Pbdic {
 		byte[] header = buildHeader(entryCount, collationOffset, morphemOffset, keyboardOffset, indexOffset,
 				defblocksOffset, name);
 
-		try (var os = new BufferedOutputStream(new FileOutputStream(out.toFile()))) {
+		try (var file = Files.newOutputStream(out); var os = new BufferedOutputStream(file)) {
 			os.write(header);
 			os.write(collBytes);
 			os.write(morphBlock);
@@ -666,8 +696,7 @@ public class ConvXdxf2Pbdic {
 	static byte[] readAsUtf16Le(Path file) throws IOException {
 		// Morphem format: uppercase chars, lines separated by NUL (uint16 0x0000),
 		// no trailing newline bytes — matches reference firmware expectation.
-		String raw = Files.readString(file, StandardCharsets.UTF_8).replace("\uFEFF", "")
-				.toUpperCase(java.util.Locale.ROOT);
+		String raw = upper(Files.readString(file, StandardCharsets.UTF_8).replace("\uFEFF", ""));
 		var out = new ByteArrayOutputStream();
 		for (String line : raw.split("\\r?\\n")) {
 			if (line.isEmpty())
@@ -717,8 +746,7 @@ public class ConvXdxf2Pbdic {
 	}
 
 	static void abort(String msg, Object... args) {
-		err(msg, args);
-		System.exit(1);
+		throw CliException.error(msg, args);
 	}
 
 	static void errRaw(String msg, Object... args) {

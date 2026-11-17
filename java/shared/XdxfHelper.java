@@ -1,10 +1,10 @@
 package shared;
 
+import static shared.TextHelper.lower;
 import static shared.XmlHelper.cleanHtml;
 import static shared.XmlHelper.encodeEntities;
 
 import java.io.BufferedWriter;
-import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
@@ -12,6 +12,7 @@ import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -25,7 +26,11 @@ import org.xml.sax.Attributes;
 import org.xml.sax.InputSource;
 import org.xml.sax.helpers.DefaultHandler;
 
-public class XdxfHelper {
+public final class XdxfHelper {
+
+	private XdxfHelper() {
+		// static members only: not instantiable (Effective Java, Item 4)
+	}
 
 	// -- Data Structures -----------------------
 
@@ -66,9 +71,34 @@ public class XdxfHelper {
 	public record XdxfEntry(String word, String definition) {
 	}
 
+	/**
+	 * A headword with its definition already converted to bytes (e.g. SDIC).
+	 *
+	 * <p>
+	 * Records compare array components by identity, so {@code equals},
+	 * {@code hashCode} and {@code toString} are overridden to use the array
+	 * <em>contents</em>. The array is shared, not copied (copying hundreds of
+	 * thousands of definitions would be costly): callers must not modify it.
+	 */
 	public record ParsedEntry(String word, byte[] definition) {
 		public int serialisedLength() {
 			return 2 + word.getBytes(StandardCharsets.UTF_8).length + 1 + definition.length + 1;
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			return o instanceof ParsedEntry other && word.equals(other.word)
+					&& Arrays.equals(definition, other.definition);
+		}
+
+		@Override
+		public int hashCode() {
+			return 31 * word.hashCode() + Arrays.hashCode(definition);
+		}
+
+		@Override
+		public String toString() {
+			return "ParsedEntry[word=" + word + ", definition=" + definition.length + " bytes]";
 		}
 	}
 
@@ -80,43 +110,30 @@ public class XdxfHelper {
 	// -- XDXF Processing Methods --
 
 	/**
-	 * XDXF Writer method
+	 * Writes the XDXF to {@code stream} and flushes it; the caller opened the
+	 * stream and closes it.
 	 */
-	public static void writeXdxf(XdxfHeader header, List<XdxfEntry> entries, Path outFile, Consumer<String> logger)
-			throws Exception {
-		logger.accept(String.format("%d entries written to %s.", entries.size(), ArgsHelper.displayPath(outFile.toString())));
-	}
-
 	public static void writeXdxf(XdxfHeader header, List<XdxfEntry> entries, OutputStream stream,
 			Consumer<String> logger) throws Exception {
 		header = header.withFormat("visual"); // Constant, for now
 
-		@SuppressWarnings("unused")
-		int count = 0;
-		try (var writer = new BufferedWriter(new OutputStreamWriter(stream, StandardCharsets.UTF_8))) {
+		var writer = new BufferedWriter(new OutputStreamWriter(stream, StandardCharsets.UTF_8));
+		writer.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+		writer.write("<xdxf lang_from=\"" + header.lang() + "\" lang_to=\"" + header.langTo() + "\" format=\""
+				+ header.format() + "\">\n");
+		writer.write("<full_name>" + encodeEntities(false, header.name()) + "</full_name>\n");
+		writer.write("<description>" + encodeEntities(false, header.description()) + "</description>\n");
 
-			writer.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
-			writer.write("<xdxf lang_from=\"" + header.lang() + "\" lang_to=\"" + header.langTo() + "\" format=\""
-					+ header.format() + "\">\n");
-			writer.write("<full_name>" + encodeEntities(false, header.name()) + "</full_name>\n");
-			writer.write("<description>" + encodeEntities(false, header.description()) + "</description>\n");
+		for (XdxfEntry entry : entries) {
+			String def = cleanHtml(entry.definition());
+			def = def.replace("\n", " ");
+			def = autoCloseTags(def);
 
-			for (XdxfEntry entry : entries) {
-				String def = cleanHtml(entry.definition());
-				def = def.replace("\n", " ");
-				def = autoCloseTags(def);
-
-				writer.write("<ar><k>" + encodeEntities(false, entry.word()) + "</k>" + def + "</ar>\n");
-				count++;
-			}
-			writer.write("</xdxf>\n");
+			writer.write("<ar><k>" + encodeEntities(false, entry.word()) + "</k>" + def + "</ar>\n");
 		}
-
-		if (stream instanceof @SuppressWarnings("unused") FileOutputStream fileStream) {
-			logger.accept(String.format("%d entries written to %s.", entries.size(), "file"));
-		} else {
-			logger.accept(String.format("%d entries written to %s.", entries.size(), "output"));
-		}
+		writer.write("</xdxf>\n");
+		writer.flush(); // flush, don't close: the stream belongs to the caller
+		logger.accept(String.format("%d entries written to %s.", entries.size(), "output"));
 
 	}
 
@@ -162,7 +179,7 @@ public class XdxfHelper {
 				logger.accept("Output file delete failed: " + ignored.getMessage());
 			}
 			logger.accept("Output file deleted.");
-			System.exit(1);
+			throw new CliException(null, 1, false); // messages already logged
 		}
 
 		return success;
@@ -198,7 +215,7 @@ public class XdxfHelper {
 		saxParser.parse(stream, new DefaultHandler() {
 			@Override
 			public void startElement(String u, String l, String qName, Attributes a) {
-				switch (qName.toLowerCase()) {
+				switch (lower(qName)) {
 				case "xdxf" -> {
 					var wrk = atmHeader.get();
 					wrk = wrk.withLang(a.getValue("lang_from"));
@@ -225,14 +242,14 @@ public class XdxfHelper {
 				}
 				default -> {
 					if (states.contains(PState.AR) && !states.contains(PState.K))
-						bufDef.append('<').append(qName.toLowerCase()).append('>');
+						bufDef.append('<').append(lower(qName)).append('>');
 				}
 				}
 			}
 
 			@Override
 			public void endElement(String u, String l, String qName) {
-				switch (qName.toLowerCase()) {
+				switch (lower(qName)) {
 				case "full_name" -> {
 					atmHeader.set(atmHeader.get().withName(bufHdr.toString()));
 					states.remove(PState.HDR);
@@ -259,7 +276,7 @@ public class XdxfHelper {
 				}
 				default -> {
 					if (states.contains(PState.AR) && !states.contains(PState.K)) {
-						bufDef.append("</").append(qName.toLowerCase()).append('>');
+						bufDef.append("</").append(lower(qName)).append('>');
 					}
 				}
 				}
