@@ -794,7 +794,7 @@ tab2xdxf.name=Wiktionário PT-&gt;PT (ReaderDict)</pre>
 
           <div class="note">
             <strong>Chain scripts</strong> run several tools from one config: <code>chain-kaikki-2-xdxf</code> and <code>chain-stardict-2-xdxf</code> stop at <code>.xdxf</code> (run <code>xdxf-2-pbdic</code>, step 5, afterwards); <code>chain-kaikki-2-stardict</code> goes on to StarDict and needs the <code>xdxf2stardict.*</code> keys (<code>confs/kaikki2stardict-*.config</code>). They stop at the first failing step and never overwrite an existing <code>.xdxf</code> with an empty one; <code>--def</code> after the config is passed to every step.<br>
-            <strong>Namespaces:</strong> <code>stardict-2-tab</code> → <code>stardict2tab.*</code>, <code>kaikki-2-tab</code> → <code>kaikki2tab.*</code>, <code>tab-2-xdxf</code> → <code>tab2xdxf.*</code>, <code>xdxf-2-pbdic</code> → <code>xdxf2pcdic.*</code>, <code>check-pbdic</code> → <code>checkpbdic.*</code>.<br>
+            <strong>Namespaces:</strong> <code>stardict-2-tab</code> → <code>stardict2tab.*</code>, <code>kaikki-2-tab</code> → <code>kaikki2tab.*</code>, <code>tab-2-xdxf</code> → <code>tab2xdxf.*</code>, <code>xdxf-2-pbdic</code> → <code>xdxf2pbdic.*</code>, <code>check-pbdic</code> → <code>checkpbdic.*</code>.<br>
             <strong>Piping:</strong> all progress messages go to stderr, so only data flows through the pipe. XML validation runs automatically even in pipeline mode (via a temporary file) — no flags needed.
           </div>
         </div>
@@ -828,7 +828,7 @@ tab2xdxf.name=Wiktionário PT-&gt;PT (ReaderDict)</pre>
           <code>EXACT</code> — headword match is case-sensitive; different definitions for the exact same headword are merged, identical entries are dropped. Recommended for StarDict sources.
           <code>NEVER</code> — never merge; only byte-identical duplicates are dropped.<br>
           <strong>Size limit:</strong> an entry must fit in one <code>.dic</code> block (27,000 bytes, the firmware's decompression buffer). Merging stops when the next definition would not fit — it starts a new entry with the same headword; a single definition that is too large on its own is truncated at a line or word boundary and ends with <code>[...]</code>. Both are logged with the word (in the Kaikki 2026-11 data only <em>sistema</em> is affected). StarDict has no such limit.<br>
-          Set via config as <code>xdxf2pcdic.merge-defs=EXACT</code> (the namespace is spelled <code>xdxf2pcdic</code>).<br>
+          Set via config as <code>xdxf2pbdic.merge-defs=EXACT</code>.<br>
           <strong>Output:</strong> the <code>.dic</code> file is written to the path given with <code>-o</code>.
         </div>
       </div>

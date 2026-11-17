@@ -81,11 +81,10 @@ Each conversion has its own config file in `confs/`. All tools read it via `-c` 
 | `stardict-2-tab`  | `stardict2tab.*`  | `in`, `out` |
 | `kaikki-2-tab`    | `kaikki2tab.*`    | `in`, `out`, `lang`, `embedded-defs`, `terms-file` |
 | `tab-2-xdxf`      | `tab2xdxf.*`      | `in`, `out`, `lang`, `lang-to`, `name`, `desc`, `validate` |
-| `xdxf-2-pbdic`    | `xdxf2pcdic.*`    | `in`, `out`, `lang`, `langdir`, `name`, `merge-defs` |
+| `xdxf-2-pbdic`    | `xdxf2pbdic.*`    | `in`, `out`, `lang`, `langdir`, `name`, `merge-defs` |
 | `xdxf-2-stardict` | `xdxf2stardict.*` | `in`, `out`, `name`, `merge-defs`, `compress` |
 | `check-pbdic`     | `checkpbdic.*`    | `xdxf`, `dic`, `lang`, `langdir`, `sample` |
 
-> Note: the `xdxf-2-pbdic` namespace is spelled `xdxf2pcdic` in the code.
 
 Key style — a config uses **either** prefixed keys **or** bare keys, never both:
 

@@ -21,7 +21,7 @@ import java.util.function.Supplier;
 public class ArgsHelper {
 
 	private final String toolName;
-	private final String namesspace;
+	private final String namespace;
 	private final Consumer<String> logger;
 	private final Supplier<String> usage;
 
@@ -61,16 +61,16 @@ public class ArgsHelper {
 
 	private static final String FROM_CLI = "command line", FROM_CONFIG = "config", FROM_DEFAULT = "default";
 
-	public ArgsHelper(String toolName, String namesspace, Consumer<String> logger, Supplier<String> usage) {
+	public ArgsHelper(String toolName, String namespace, Consumer<String> logger, Supplier<String> usage) {
 		super();
 
 		// accept "tab2xdxf" or "tab2xdxf." — the "." separator is added when keys are looked up
-		while (namesspace.endsWith(".")) {
-			namesspace = namesspace.substring(0, namesspace.length() - 1);
+		while (namespace.endsWith(".")) {
+			namespace = namespace.substring(0, namespace.length() - 1);
 		}
 
 		this.toolName = toolName;
-		this.namesspace = namesspace;
+		this.namespace = namespace;
 		this.logger = logger;
 		this.usage = usage;
 	}
@@ -351,7 +351,7 @@ public class ArgsHelper {
 	public void listProperties(Map<String, String> cli) {
 		var ord = new LinkedHashMap<>(cli); // ordered
 		logRaw("");
-		logRaw("| Configuration (%s)", namesspace);
+		logRaw("| Configuration (%s)", namespace);
 		logRaw("| ");
 		int maxLen = ord.keySet().stream().mapToInt(ky -> ky.length()).max().orElse(0);
 		int maxVal = ord.entrySet().stream()
@@ -386,7 +386,7 @@ public class ArgsHelper {
 	 */
 	public void mergeConfig2Cli(List<String> myArgs, Map<String, String> cli, Properties config) {
 
-		String ns = namesspace + ".";
+		String ns = namespace + ".";
 		boolean prefixed = config.stringPropertyNames().stream().anyMatch(ArgsHelper::isPrefixed);
 
 		if (prefixed) {

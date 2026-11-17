@@ -75,7 +75,7 @@ public class ConvXdxf2Pbdic {
 		}
 
 		var cli = parseArgs(args);
-		var argsHlp = new ArgsHelper(TOOL, "xdxf2pcdic", er -> err(er), () -> usage());
+		var argsHlp = new ArgsHelper(TOOL, "xdxf2pbdic", er -> err(er), () -> usage());
 		Properties config = argsHlp.loadConfig(cli);
 		argsHlp.mergeConfig2Cli(List.of("in", "out", "lang", "langdir", "name", "merge-defs"), cli, config);
 
@@ -775,7 +775,7 @@ public class ConvXdxf2Pbdic {
 				                     (default: lang/<lang>)
 				  -n / --name        Dictionary title (default: name in the XDXF header,
 				                     else the output path without extension)
-				  -c / --config      .properties config file (namespace: xdxf2pcdic.*);
+				  -c / --config      .properties config file (namespace: xdxf2pbdic.*);
 				                     command-line options override it
 				  --def <name>=<value>
 				                     Set or override a config variable (def); repeatable

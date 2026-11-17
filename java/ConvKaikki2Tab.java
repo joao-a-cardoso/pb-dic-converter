@@ -335,7 +335,7 @@ public class ConvKaikki2Tab {
 			if (etym.startsWith(":"))
 				etym = etym.substring(1).strip();
 			sbDef.append("<p>")//
-					.append(formatLabel(terms, "ethymology"))//
+					.append(formatLabel(terms, "etymology"))//
 					.append(encodeEntities(false, etym))//
 					.append("</p>");
 		}
