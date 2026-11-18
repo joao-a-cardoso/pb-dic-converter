@@ -201,8 +201,10 @@ data/
 lang/
   en/  pt/      collates.txt  keyboard.txt  morphems.txt
 windows/        converter.exe and language files for the original Windows converter (not in git)
-docs/           sdic_format.pdf  toolchain-design-reference.pdf  architecture.html
+docs/           sdic_format.pdf  toolchain-design-reference.pdf  architecture.html  code-metrics.html
   src/          toolchain-design-reference.html  sdic_format.html  (sources of the PDFs)
+                jmetrics.py  build-code-metrics.py  code-metrics.body.html
+                (python3 docs/src/build-code-metrics.py rebuilds docs/code-metrics.html)
 ```
 
 ## Project Structure

@@ -1,0 +1,392 @@
+<!-- Page body of docs/code-metrics.html; built by docs/src/build-code-metrics.py -->
+<style>
+  .cm { display: grid; gap: var(--cds-gap-xl); font-family: var(--font-anthropic-sans); color: var(--color-fg); }
+  .cm h1 { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); margin: 0; }
+  .cm h2 { font-size: var(--cds-font-size-heading); font-weight: var(--cds-font-weight-medium); margin: 0; }
+  .cm-head { display: grid; gap: var(--cds-gap-sm); }
+  .cm-lede { margin: 0; max-width: 70ch; color: var(--color-fg); }
+  .cm-lede b, .cm-tile b { font-variant-numeric: tabular-nums; }
+  .cm-sub { margin: 0; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); max-width: 75ch; }
+  .cm-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--cds-gap-md); }
+  .cm-tile { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-lg); display: grid; gap: var(--cds-gap-xs); }
+  .cm-tile .cm-label { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+  .cm-tile .cm-big { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .cm-tile .cm-note { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+  .cm-section { display: grid; gap: var(--cds-gap-sm); min-width: 0; }
+  .cm-chart { position: relative; min-height: 220px; min-width: 0; }
+  .cm-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .cm-chart text { font-size: var(--cds-font-size-caption); fill: var(--cds-text-secondary); font-family: var(--font-anthropic-sans); }
+  .cm-chart .cm-val { fill: var(--color-fg); font-variant-numeric: tabular-nums; }
+  .cm-chart .cm-group { fill: var(--color-fg); font-weight: var(--cds-font-weight-medium); }
+  .cm-chart .domain, .cm-chart .tick line { stroke: var(--cds-chart-axis); }
+  .cm-chart .cm-grid line { stroke: var(--cds-chart-grid); }
+  .cm-legend { display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm) var(--cds-gap-lg); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+  .cm-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .cm-sw { width: 12px; height: 12px; border-radius: 2px; display: inline-block; }
+  .cm-tip { position: absolute; pointer-events: none; background: var(--cds-surface-popover); border: 1px solid var(--cds-border); box-shadow: var(--cds-shadow-popover); border-radius: var(--cds-radius); padding: var(--cds-pad-sm) var(--cds-pad-md); font-size: var(--cds-font-size-caption); color: var(--color-fg); white-space: nowrap; z-index: 2; }
+  .cm-tip .cm-muted { color: var(--cds-text-secondary); }
+  .cm-table-wrap { overflow-x: auto; min-width: 0; }
+  .cm-table { border-collapse: collapse; width: 100%; font-size: var(--cds-font-size-body); font-variant-numeric: tabular-nums; }
+  .cm-table th, .cm-table td { padding: 6px 10px; border-bottom: 1px solid var(--color-border-line); text-align: right; white-space: nowrap; }
+  .cm-table th { font-weight: var(--cds-font-weight-medium); color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
+  .cm-table th:first-child, .cm-table td:first-child, .cm-table .cm-left { text-align: left; }
+  .cm-table code, .cm-lede code, .cm-sub code, .cm-notes code { font-size: 0.92em; }
+  .cm-hot { color: var(--color-bad); font-weight: var(--cds-font-weight-medium); }
+  .cm-warm { color: var(--color-warn); }
+  .cm-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--cds-gap-xl); }
+  .cm-notes { color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); max-width: 75ch; }
+  .cm-notes summary { cursor: pointer; color: var(--color-fg); }
+  .cm-notes ul { padding-left: 18px; }
+  .cm-fail { color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); padding: var(--cds-pad-md) 0; }
+</style>
+
+<div class="cm">
+  <header class="cm-head" id="summary">
+    <h1>pb-dic-converter Code Metrics</h1>
+    <p class="cm-lede" data-read lang="en">
+      The Java code has <b data-draw="t-code" data-source="totals" data-field="code" data-row="0">—</b> lines of code in
+      <b data-draw="t-files" data-source="totals" data-field="files" data-row="0">—</b> files.
+      <b data-draw="t-simple-share" data-source="totals" data-field="simple_share" data-row="0">—</b> of its
+      <b data-draw="t-methods" data-source="totals" data-field="methods" data-row="0">—</b> methods have a complexity of 5 or less;
+      the most complex is <code data-draw="top-name" data-source="top" data-field="method" data-row="0">—</code> in
+      <code data-draw="top-file" data-source="top" data-field="file" data-row="0">—</code>, at
+      <b data-draw="top-cc" data-source="top" data-field="cc" data-row="0">—</b>.
+    </p>
+    <p class="cm-sub">Six tools in <code>java/</code> and the shared library in <code>java/shared/</code>, measured on <span data-cm-date>—</span>. Complexity is cyclomatic: 1 plus one per branch (<code>if</code>, <code>for</code>, <code>while</code>, <code>case</code>, <code>catch</code>, <code>&amp;&amp;</code>, <code>||</code>, <code>?:</code>).</p>
+  </header>
+
+  <div class="cm-tiles" id="tiles">
+    <div class="cm-tile">
+      <span class="cm-label">Lines of code</span>
+      <span class="cm-big" data-draw="tile-code" data-source="totals" data-field="code" data-row="0">—</span>
+      <span class="cm-note">of <span data-draw="tile-lines" data-source="totals" data-field="lines" data-row="0">—</span> lines in all</span>
+    </div>
+    <div class="cm-tile">
+      <span class="cm-label">Comment lines</span>
+      <span class="cm-big" data-draw="tile-comment" data-source="totals" data-field="comment" data-row="0">—</span>
+      <span class="cm-note"><span data-draw="tile-comment-share" data-source="totals" data-field="comment_share" data-row="0">—</span> of non-blank lines</span>
+    </div>
+    <div class="cm-tile">
+      <span class="cm-label">Files · types</span>
+      <span class="cm-big"><span data-draw="tile-files" data-source="totals" data-field="files" data-row="0">—</span> · <span data-draw="tile-types" data-source="totals" data-field="types" data-row="0">—</span></span>
+      <span class="cm-note">classes, records, enums, interfaces</span>
+    </div>
+    <div class="cm-tile">
+      <span class="cm-label">Methods</span>
+      <span class="cm-big" data-draw="tile-methods" data-source="totals" data-field="methods" data-row="0">—</span>
+      <span class="cm-note"><span data-draw="tile-avg-len" data-source="totals" data-field="avg_len" data-row="0">—</span> lines on average</span>
+    </div>
+    <div class="cm-tile">
+      <span class="cm-label">Simple methods (complexity ≤ 5)</span>
+      <span class="cm-big" data-draw="tile-simple-share" data-source="totals" data-field="simple_share" data-row="0">—</span>
+      <span class="cm-note"><span data-draw="tile-over20" data-source="totals" data-field="over20" data-row="0">—</span> methods above 20</span>
+    </div>
+  </div>
+
+  <section class="cm-section" id="lines-per-file">
+    <h2>Lines per file</h2>
+    <p class="cm-sub">Code, comment and blank lines in each Java file, the tools first, then the shared library.</p>
+    <div class="cm-legend" aria-hidden="true">
+      <span><i class="cm-sw" data-draw="sw-code"></i>Code</span>
+      <span><i class="cm-sw" data-draw="sw-comment"></i>Comment</span>
+      <span><i class="cm-sw" style="background: var(--cds-chart-muted)"></i>Blank</span>
+    </div>
+    <div class="cm-chart" data-draw="lines-chart" data-source="files"></div>
+  </section>
+
+  <div class="cm-two">
+    <section class="cm-section" id="complexity-distribution">
+      <h2>Complexity of the methods</h2>
+      <p class="cm-sub">Number of methods in each complexity band. Up to 10 is usually easy to follow; above 20 is hard to test and change.</p>
+      <div class="cm-chart" data-draw="cc-chart" data-source="cc_buckets"></div>
+    </section>
+
+    <section class="cm-section" id="length-vs-complexity">
+      <h2>Length against complexity</h2>
+      <p class="cm-sub">Each dot is a method. Point at one for its name.</p>
+      <div class="cm-legend" aria-hidden="true">
+        <span><i class="cm-sw" data-draw="sw-tool"></i>Tool</span>
+        <span><i class="cm-sw" data-draw="sw-shared"></i>Shared library</span>
+      </div>
+      <div class="cm-chart" data-draw="scatter" data-source="methods"></div>
+    </section>
+  </div>
+
+  <section class="cm-section" id="top-methods">
+    <h2>Most complex methods</h2>
+    <p class="cm-sub">The 15 methods with the highest complexity. Red: above 20; amber: 11 to 20.</p>
+    <div class="cm-table-wrap">
+      <table class="cm-table" data-source="methods" data-row-key="id">
+        <thead>
+          <tr>
+            <th data-field="method">Method</th>
+            <th data-field="file" class="cm-left">File</th>
+            <th data-field="line">Line</th>
+            <th data-field="lines">Lines</th>
+            <th data-field="cc">Complexity</th>
+          </tr>
+        </thead>
+        <tbody data-draw="top-table"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="cm-section" id="per-file">
+    <h2>Per file</h2>
+    <p class="cm-sub">Method length and complexity are the average and the maximum over the file's methods.</p>
+    <div class="cm-table-wrap">
+      <table class="cm-table" data-source="files" data-row-key="file">
+        <thead>
+          <tr>
+            <th data-field="file">File</th>
+            <th data-field="tool" class="cm-left">Tool</th>
+            <th data-field="code">Code</th>
+            <th data-field="comment">Comment</th>
+            <th data-field="blank">Blank</th>
+            <th data-field="types">Types</th>
+            <th data-field="methods">Methods</th>
+            <th data-field="avg_len">Avg length</th>
+            <th data-field="max_len">Max length</th>
+            <th data-field="avg_cc">Avg complexity</th>
+            <th data-field="max_cc">Max complexity</th>
+          </tr>
+        </thead>
+        <tbody data-draw="file-table"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <details class="cm-notes" id="how-measured">
+    <summary>How these numbers are measured</summary>
+    <ul>
+      <li>A small Python script reads every <code>.java</code> file; comments and string literals are blanked out before anything is counted.</li>
+      <li>A comment line holds only a comment; a line with code and a trailing comment counts as code.</li>
+      <li>A method is a declaration followed by a block; its length runs from the opening to the closing brace line.</li>
+      <li>A method that contains an anonymous class (the SAX handler in <code>XdxfHelper.parseXdxf</code>) also counts that class's branches, and the class's own methods are listed as well.</li>
+      <li>The numbers are approximate: close to what a dedicated tool reports, not identical.</li>
+    </ul>
+  </details>
+</div>
+
+<script>
+  dash.calc('totals', {
+    title: 'Totals',
+    description: 'Sums over all files and methods, and the share of simple methods.',
+    inputs: ['files', 'methods'],
+    fn: (files, methods) => {
+      const sum = (k) => files.reduce((s, f) => s + Number(f[k]), 0);
+      const code = sum('code'), comment = sum('comment');
+      const simple = methods.filter((m) => Number(m.cc) <= 5).length;
+      return [{
+        files: files.length,
+        lines: sum('lines'),
+        code,
+        comment,
+        blank: sum('blank'),
+        types: sum('types'),
+        methods: methods.length,
+        avg_len: Math.round(methods.reduce((s, m) => s + Number(m.lines), 0) / methods.length),
+        simple_share: Math.round((100 * simple) / methods.length),
+        comment_share: Math.round((100 * comment) / (code + comment)),
+        over20: methods.filter((m) => Number(m.cc) > 20).length,
+      }];
+    },
+  });
+
+  dash.calc('top', {
+    title: 'Most complex method',
+    description: 'The method with the highest complexity.',
+    inputs: ['methods'],
+    fn: (methods) => {
+      const m = methods.reduce((a, b) => (Number(b.cc) > Number(a.cc) ? b : a));
+      return [{ method: m.method, file: m.file, cc: Number(m.cc), lines: Number(m.lines) }];
+    },
+  });
+
+  dash.calc('cc_buckets', {
+    title: 'Methods per complexity band',
+    description: 'How many methods fall in each complexity band.',
+    inputs: ['methods'],
+    fn: (methods) => {
+      const bands = [['1–5', 1, 5], ['6–10', 6, 10], ['11–20', 11, 20], ['21–50', 21, 50], ['over 50', 51, Infinity]];
+      return bands.map(([band, lo, hi]) => ({ band, methods: methods.filter((m) => Number(m.cc) >= lo && Number(m.cc) <= hi).length }));
+    },
+  });
+
+  window.cmFmt = d3.format(',');
+  window.cmCcClass = (cc) => (cc > 20 ? 'cm-hot' : cc > 10 ? 'cm-warm' : '');
+
+  // single values from the totals and top calcs
+  const one = (draw, source, field, fmt) => dash.draw(draw, (el) => {
+    const d = dash.data(source);
+    el.textContent = d.status === 'ok' && d.data && d.data[0] ? fmt(d.data[0][field]) : '—';
+  });
+  const n = (v) => cmFmt(v), pct = (v) => v + '%', txt = (v) => String(v);
+  one('t-code', 'totals', 'code', n); one('t-files', 'totals', 'files', n); one('t-methods', 'totals', 'methods', n);
+  one('t-simple-share', 'totals', 'simple_share', pct);
+  one('top-name', 'top', 'method', txt); one('top-file', 'top', 'file', txt); one('top-cc', 'top', 'cc', n);
+  one('tile-code', 'totals', 'code', n); one('tile-lines', 'totals', 'lines', n);
+  one('tile-comment', 'totals', 'comment', n); one('tile-comment-share', 'totals', 'comment_share', pct);
+  one('tile-files', 'totals', 'files', n); one('tile-types', 'totals', 'types', n);
+  one('tile-methods', 'totals', 'methods', n); one('tile-avg-len', 'totals', 'avg_len', n);
+  one('tile-simple-share', 'totals', 'simple_share', pct); one('tile-over20', 'totals', 'over20', n);
+
+  const swatch = (name, i) => dash.draw(name, (el) => { el.style.background = dash.colors[i]; });
+  swatch('sw-code', 0); swatch('sw-comment', 1); swatch('sw-tool', 0); swatch('sw-shared', 1);
+
+  window.cmFail = (el, d) => {
+    el.replaceChildren();
+    const p = document.createElement('div');
+    p.className = 'cm-fail';
+    p.textContent = d.status === 'error' ? 'Failed to load' : '—';
+    el.append(p);
+  };
+</script>
+
+<script>
+  // Lines per file: horizontal stacked bars, grouped Tool / Shared
+  dash.draw('lines-chart', (el) => {
+    const d = dash.data('files');
+    if (d.status !== 'ok') return cmFail(el, d);
+    const rows = d.data.map((r) => ({ ...r, code: +r.code, comment: +r.comment, blank: +r.blank }));
+    const groups = [['Tools', rows.filter((r) => r.part === 'Tool')], ['Shared library', rows.filter((r) => r.part === 'Shared')]];
+    groups.forEach(([, g]) => g.sort((a, b) => b.code - a.code));
+    const W = Math.max(300, el.clientWidth), barH = 16, gap = 6, groupGap = 30;
+    el.replaceChildren();
+    const svg = d3.select(el).append('svg').attr('role', 'img')
+      .attr('aria-label', 'Code, comment and blank lines per Java file, tools and shared library');
+    // measure the widest file label
+    const probe = svg.append('text').attr('class', 'cm-label-probe');
+    let labelW = 0;
+    rows.forEach((r) => { probe.text(r.file.replace('shared/', '')); labelW = Math.max(labelW, probe.node().getComputedTextLength()); });
+    probe.remove();
+    const left = Math.ceil(labelW) + 10, right = 44;
+    const max = d3.max(rows, (r) => r.code + r.comment + r.blank);
+    const x = d3.scaleLinear().domain([0, max]).range([left, W - right]).nice();
+    let y = 22;
+    const colors = { code: dash.colors[0], comment: dash.colors[1], blank: 'var(--cds-chart-muted)' };
+    const tip = d3.select(el).append('div').attr('class', 'cm-tip').style('display', 'none');
+    const body = svg.append('g');
+    groups.forEach(([name, g]) => {
+      body.append('text').attr('class', 'cm-group').attr('x', 0).attr('y', y - 6).text(name);
+      g.forEach((r) => {
+        const row = body.append('g').attr('transform', `translate(0,${y})`);
+        row.append('text').attr('x', left - 8).attr('y', barH / 2).attr('dy', '0.35em').attr('text-anchor', 'end').text(r.file.replace('shared/', ''));
+        let x0 = x(0);
+        ['code', 'comment', 'blank'].forEach((k) => {
+          const w = x(r[k]) - x(0);
+          row.append('rect').attr('x', x0).attr('y', 0).attr('width', Math.max(0, w)).attr('height', barH).style('fill', colors[k]);
+          x0 += w;
+        });
+        row.append('text').attr('class', 'cm-val').attr('x', x0 + 5).attr('y', barH / 2).attr('dy', '0.35em').text(cmFmt(r.code));
+        row.append('rect').attr('x', 0).attr('y', -gap / 2).attr('width', W).attr('height', barH + gap).style('fill', 'transparent')
+          .on('pointermove', (ev) => {
+            const [mx, my] = d3.pointer(ev, el);
+            tip.style('display', null).html('');
+            tip.append('div').append('b').text(r.file);
+            tip.append('div').text(`${cmFmt(r.code)} code · ${cmFmt(r.comment)} comment · ${cmFmt(r.blank)} blank`);
+            tip.append('div').attr('class', 'cm-muted').text(`${r.methods} methods${r.tool ? ' · ' + r.tool : ''}`);
+            const tw = tip.node().offsetWidth;
+            tip.style('left', Math.min(Math.max(0, mx + 12), el.clientWidth - tw) + 'px').style('top', (my + 14) + 'px');
+          })
+          .on('pointerleave', () => tip.style('display', 'none'));
+        y += barH + gap;
+      });
+      y += groupGap;
+    });
+    const axisY = y - groupGap + 4;
+    svg.append('g').attr('transform', `translate(0,${axisY})`)
+      .call(d3.axisBottom(x).ticks(Math.max(2, Math.floor((W - left) / 90))).tickFormat(d3.format(',')));
+    svg.attr('viewBox', `0 0 ${W} ${axisY + 24}`);
+  });
+
+  // Complexity bands: vertical bars with values printed
+  dash.draw('cc-chart', (el) => {
+    const d = dash.data('cc_buckets');
+    if (d.status !== 'ok' || !Array.isArray(d.data)) return cmFail(el, d);
+    const W = Math.max(280, el.clientWidth), H = 220, m = { t: 22, r: 8, b: 28, l: 8 };
+    el.replaceChildren();
+    const svg = d3.select(el).append('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img')
+      .attr('aria-label', 'Number of methods in each complexity band');
+    const x = d3.scaleBand().domain(d.data.map((r) => r.band)).range([m.l, W - m.r]).padding(0.25);
+    const y = d3.scaleLinear().domain([0, d3.max(d.data, (r) => r.methods)]).range([H - m.b, m.t]);
+    const fill = (band) => band === '1–5' || band === '6–10' ? dash.colors[0] : band === '11–20' ? 'var(--color-warn)' : 'var(--cds-chart-status-critical)';
+    const g = svg.selectAll('g.bar').data(d.data).join('g');
+    g.append('rect').attr('x', (r) => x(r.band)).attr('width', x.bandwidth())
+      .attr('y', (r) => y(r.methods)).attr('height', (r) => y(0) - y(r.methods)).style('fill', (r) => fill(r.band));
+    g.append('text').attr('class', 'cm-val').attr('x', (r) => x(r.band) + x.bandwidth() / 2).attr('y', (r) => y(r.methods) - 6)
+      .attr('text-anchor', 'middle').text((r) => cmFmt(r.methods));
+    svg.append('g').attr('transform', `translate(0,${H - m.b})`).call(d3.axisBottom(x).tickSizeOuter(0));
+  });
+
+  // Length vs complexity scatter, with tooltip and the top four labelled
+  dash.draw('scatter', (el) => {
+    const d = dash.data('methods');
+    if (d.status !== 'ok') return cmFail(el, d);
+    const rows = d.data.map((r) => ({ ...r, lines: +r.lines, cc: +r.cc }));
+    const W = Math.max(280, el.clientWidth), H = 260, m = { t: 12, r: 16, b: 34, l: 34 };
+    el.replaceChildren();
+    const svg = d3.select(el).append('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img')
+      .attr('aria-label', 'Method length in lines against complexity, one dot per method');
+    const x = d3.scaleLinear().domain([0, d3.max(rows, (r) => r.lines)]).nice().range([m.l, W - m.r]);
+    const y = d3.scaleLinear().domain([0, d3.max(rows, (r) => r.cc)]).nice().range([H - m.b, m.t]);
+    svg.append('g').attr('class', 'cm-grid').attr('transform', `translate(${m.l},0)`)
+      .call(d3.axisLeft(y).ticks(5).tickSize(-(W - m.l - m.r)).tickFormat('')).call((g) => g.select('.domain').remove());
+    svg.append('g').attr('transform', `translate(0,${H - m.b})`).call(d3.axisBottom(x).ticks(Math.max(2, Math.floor(W / 80))));
+    svg.append('g').attr('transform', `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(5)).call((g) => g.select('.domain').remove());
+    svg.append('text').attr('x', W - m.r).attr('y', H - 4).attr('text-anchor', 'end').text('lines');
+    svg.append('text').attr('x', m.l + 4).attr('y', m.t + 4).text('complexity');
+    const tip = d3.select(el).append('div').attr('class', 'cm-tip').style('display', 'none');
+    svg.append('g').selectAll('circle').data(rows).join('circle')
+      .attr('cx', (r) => x(r.lines)).attr('cy', (r) => y(r.cc)).attr('r', 4)
+      .style('fill', (r) => (r.part === 'Tool' ? dash.colors[0] : dash.colors[1])).style('fill-opacity', 0.7)
+      .on('pointerenter', (ev, r) => {
+        const [mx, my] = d3.pointer(ev, el);
+        tip.style('display', null).html('');
+        tip.append('div').append('b').text(r.method);
+        tip.append('div').attr('class', 'cm-muted').text(`${r.file}:${r.line}`);
+        tip.append('div').text(`${r.lines} lines · complexity ${r.cc}`);
+        const tw = tip.node().offsetWidth;
+        tip.style('left', Math.min(Math.max(0, mx + 12), el.clientWidth - tw) + 'px').style('top', Math.max(0, my - 54) + 'px');
+      })
+      .on('pointerleave', () => tip.style('display', 'none'));
+    const top = [...rows].sort((a, b) => b.cc - a.cc).slice(0, 4);
+    // label positions, pushed apart vertically so two labels never meet
+    const ly = top.map((r) => y(r.cc));
+    for (let i = 1; i < ly.length; i++) if (ly[i] - ly[i - 1] < 14) ly[i] = ly[i - 1] + 14;
+    svg.append('g').selectAll('text').data(top).join('text').attr('class', 'cm-val')
+      .attr('x', (r) => x(r.lines) + (x(r.lines) > W * 0.7 ? -8 : 8)).attr('y', (r, i) => ly[i]).attr('dy', '0.35em')
+      .attr('text-anchor', (r) => (x(r.lines) > W * 0.7 ? 'end' : 'start'))
+      .text((r) => r.method);
+  });
+
+  // Tables
+  dash.draw('top-table', (tb) => {
+    const d = dash.data('methods');
+    tb.replaceChildren();
+    if (d.status !== 'ok') return;
+    [...d.data].sort((a, b) => b.cc - a.cc || b.lines - a.lines).slice(0, 15).forEach((r) => {
+      const tr = tb.insertRow();
+      tr.dataset.key = encodeURIComponent(r.id);
+      const c0 = tr.insertCell(); const code = document.createElement('code'); code.textContent = r.method; c0.append(code);
+      const c1 = tr.insertCell(); c1.textContent = r.file; c1.className = 'cm-left';
+      tr.insertCell().textContent = r.line;
+      tr.insertCell().textContent = r.lines;
+      const c4 = tr.insertCell(); c4.textContent = r.cc; c4.className = cmCcClass(+r.cc);
+    });
+  });
+
+  dash.draw('file-table', (tb) => {
+    const d = dash.data('files');
+    tb.replaceChildren();
+    if (d.status !== 'ok') return;
+    const order = (r) => (r.part === 'Tool' ? 0 : 1);
+    [...d.data].sort((a, b) => order(a) - order(b) || b.code - a.code).forEach((r) => {
+      const tr = tb.insertRow();
+      const c0 = tr.insertCell(); c0.textContent = r.file;
+      const c1 = tr.insertCell(); c1.textContent = r.tool; c1.className = 'cm-left';
+      ['code', 'comment', 'blank', 'types', 'methods', 'avg_len', 'max_len', 'avg_cc'].forEach((k) => { tr.insertCell().textContent = r[k]; });
+      const cm = tr.insertCell(); cm.textContent = r.max_cc; cm.className = cmCcClass(+r.max_cc);
+    });
+  });
+</script>
